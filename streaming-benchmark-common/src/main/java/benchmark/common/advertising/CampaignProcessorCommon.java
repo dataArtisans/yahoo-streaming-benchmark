@@ -38,7 +38,7 @@ public class CampaignProcessorCommon {
         lastWindowMillis = System.currentTimeMillis();
         need_flush = new HashSet<CampaignWindowPair>();
 
-        Runnable flusher = new Runnable() {
+      /*  Runnable flusher = new Runnable() {
             public void run() {
                 try {
                     while (true) {
@@ -51,7 +51,7 @@ public class CampaignProcessorCommon {
                 }
             }
         };
-        new Thread(flusher).start();
+        new Thread(flusher).start(); */
     }
 
     public void execute(String campaign_id, String event_time) {
