@@ -59,7 +59,7 @@ public class AdvertisingTopologyNative {
             env.enableCheckpointing(flinkBenchmarkParams.getLong("flink.checkpoint-interval", 1000));
         }
         // set default parallelism for all operators (recommended value: number of available worker CPU cores in the cluster (hosts * cores))
-        env.setParallelism(1); //TODO set to 1 for benchmark
+        env.setParallelism(1); //TODO set to 1 for benchmark only.
 
         Properties kProps = flinkBenchmarkParams.getProperties();
         kProps.setProperty("auto.offset.reset", "earliest");
