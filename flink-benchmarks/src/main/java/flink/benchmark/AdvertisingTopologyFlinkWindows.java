@@ -110,6 +110,7 @@ public class AdvertisingTopologyFlinkWindows {
         ;
         DataStream<Tuple3<String, String, Long>> result = null;
 
+        // campaign_id, window end time, count
         WindowedStream<Tuple3<String, String, Long>, Tuple, TimeWindow> window = joinedAdImpressions.map(new MapToImpressionCount())
                 // process campaign
                 .keyBy(0) // campaign_id
