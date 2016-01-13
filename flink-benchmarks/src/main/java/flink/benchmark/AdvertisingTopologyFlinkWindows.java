@@ -21,6 +21,7 @@ import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.WindowedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.AscendingTimestampExtractor;
 import org.apache.flink.streaming.api.functions.TimestampExtractor;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
@@ -89,7 +90,7 @@ public class AdvertisingTopologyFlinkWindows {
                         parameters.getProperties()));
 
         // log performance
-        rawMessageStream.flatMap(new ThroughputLogger<String>(37 + 14 + 8));
+        rawMessageStream.flatMap(new ThroughputLogger<String>(37 + 14 + 8, 50000));
 
         DataStream<Tuple2<String, String>> joinedAdImpressions = rawMessageStream
                 // Parse the String as JSON
@@ -107,10 +108,10 @@ public class AdvertisingTopologyFlinkWindows {
                 // extract timestamps and generate watermarks from event_time
                 .assignTimestamps(new AdTimestampExtractor());
 
-        ;
+        // campaign_id, window end time, count
         DataStream<Tuple3<String, String, Long>> result = null;
 
-        // campaign_id, window end time, count
+
         WindowedStream<Tuple3<String, String, Long>, Tuple, TimeWindow> window = joinedAdImpressions.map(new MapToImpressionCount())
                 // process campaign
                 .keyBy(0) // campaign_id
@@ -137,12 +138,13 @@ public class AdvertisingTopologyFlinkWindows {
                 });
 
 
-      //  result.print();
-
-
         // write result to redis
-      //  result.addSink(new RedisResultSink());
-    //    result.addSink(new RedisResultSinkOptimized());
+        if(parameters.has("add-result-sink")) {
+            result.addSink(new RedisResultSink());
+        }
+        if(parameters.has("add-result-sink-optimized")) {
+            result.addSink(new RedisResultSinkOptimized());
+        }
 
         env.execute();
     }
@@ -233,24 +235,13 @@ public class AdvertisingTopologyFlinkWindows {
         }
     }
 
-    private static class AdTimestampExtractor implements TimestampExtractor<Tuple2<String, String>> {
+    private static class AdTimestampExtractor extends AscendingTimestampExtractor<Tuple2<String, String>> {
 
         long watermark = Long.MIN_VALUE;
-        @Override
-        public long extractTimestamp(Tuple2<String, String> element, long currentTimestamp) {
-            long time = Long.valueOf(element.f1);
-            this.watermark = Math.max(time - 60000L, this.watermark); // we assume the latest possible delay to be 60 seconds.
-            return time;
-        }
 
         @Override
-        public long extractWatermark(Tuple2<String, String> element, long currentTimestamp) {
-            return Long.MIN_VALUE;
-        }
-
-        @Override
-        public long getCurrentWatermark() {
-            return watermark;
+        public long extractAscendingTimestamp(Tuple2<String, String> element, long currentTimestamp) {
+            return Long.parseLong(element.f1);
         }
     }
 
@@ -337,8 +328,9 @@ public class AdvertisingTopologyFlinkWindows {
         long lastElements = 0;
         private int elementSize;
 
-        public ThroughputLogger(int elementSize) {
+        public ThroughputLogger(int elementSize, long logfreq) {
             this.elementSize = elementSize;
+            this.logfreq = logfreq;
         }
 
         @Override

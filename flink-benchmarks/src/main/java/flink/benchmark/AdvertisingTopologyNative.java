@@ -70,7 +70,7 @@ public class AdvertisingTopologyNative {
                         new SimpleStringSchema(),
                         kProps));
 
-        messageStream.flatMap(new AdvertisingTopologyFlinkWindows.ThroughputLogger<String>(250));
+        messageStream.flatMap(new AdvertisingTopologyFlinkWindows.ThroughputLogger<String>(250, 50_000));
 
         messageStream
                 .rebalance()

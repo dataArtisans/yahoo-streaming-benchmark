@@ -23,6 +23,7 @@ import akka.actor.Props;
 import com.typesafe.config.Config;
 import org.apache.flink.api.common.functions.RuntimeContext;
 import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.runtime.akka.AkkaUtils;
@@ -32,7 +33,6 @@ import org.apache.flink.runtime.state.StateHandle;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
 import org.apache.flink.streaming.api.watermark.Watermark;
-import org.apache.flink.streaming.runtime.operators.Triggerable;
 import org.apache.flink.streaming.runtime.streamrecord.StreamRecord;
 import org.apache.flink.streaming.runtime.tasks.StreamTaskState;
 import org.slf4j.Logger;
@@ -41,27 +41,30 @@ import scala.Option;
 import scala.Some;
 import scala.concurrent.duration.FiniteDuration;
 
+import java.io.Serializable;
 import java.net.UnknownHostException;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class QueryableWindowOperator
-		extends AbstractStreamOperator<Tuple2<String, Long>>
-		implements OneInputStreamOperator<Tuple2<String, Long>, Tuple2<String, Long>>,
-		Triggerable,
+		extends AbstractStreamOperator<Tuple3<String, Long, Long>>
+		implements OneInputStreamOperator<Tuple2<String, Long>, Tuple3<String, Long, Long>>,
 		QueryableKeyValueState<String, String> /* key: campaign_id (String), value: long (window count) */{
 
 	private static final Logger LOG = LoggerFactory.getLogger(QueryableWindowOperator.class);
 
 	private final long windowSize;
 
+	private long lastWatermark = 0;
+
 	// first key is the window key, i.e. the end of the window
 	// second key is the key of the element (campaign_id), value is count
 	// these are checkpointed, i.e. fault-tolerant
 
 	// (campaign_id --> (window_end_ts, count)
-	private Map<String, Map<Long, Long>> windows;
+	private Map<String, Map<Long, CountAndAccessTime>> windows;
 
 	// we retain the windows for a bit after emitting to give
 	// them time to propagate to their final storage location
@@ -126,7 +129,7 @@ public class QueryableWindowOperator
 
 	@Override
 	public void processElement(StreamRecord<Tuple2<String, Long>> streamRecord) throws Exception {
-
+		System.out.println("Process element " + streamRecord);
 		long timestamp = streamRecord.getTimestamp();
 		long windowStart = timestamp - (timestamp % windowSize);
 		long windowEnd = windowStart + windowSize;
@@ -134,62 +137,51 @@ public class QueryableWindowOperator
 		String campaign_id = streamRecord.getValue().f0;
 
 		synchronized (windows) {
-			Map<Long, Long> window = windows.get(campaign_id);
+			Map<Long, CountAndAccessTime> window = windows.get(campaign_id);
 			if (window == null) {
 				window = new HashMap<>();
 				windows.put(campaign_id, window);
 			}
 
-			Long previous = window.get(windowEnd);
+			CountAndAccessTime previous = window.get(windowEnd);
 			if (previous == null) {
-				window.put(windowEnd, 1L);
+				previous = new CountAndAccessTime();
+				previous.count = 1L;
 			} else {
-				window.put(windowEnd, previous + 1L);
+				previous.count++;
 			}
+			previous.lastAccessTime = System.currentTimeMillis();
+			window.put(windowEnd, previous);
 		}
 	}
 
 	@Override
 	public void processWatermark(Watermark watermark) throws Exception {
+		StreamRecord<Tuple3<String, Long, Long>> result = new StreamRecord<>(null, -1);
 
-		// for now, we won't emit anything
-
-	/*	StreamRecord<Tuple2<Long, Long>> result = new StreamRecord<>(null, -1);
-
-		Iterator<Map.Entry<Long, Map<String, Long>>> iterator = windows.entrySet().iterator();
+		Iterator<Map.Entry<String, Map<Long, CountAndAccessTime>>> iterator = windows.entrySet().iterator();
 		while (iterator.hasNext()) {
-			Map.Entry<Long, Map<String, Long>> window = iterator.next();
-			if (window.getKey() < watermark.getTimestamp()) {
-				for (Map.Entry<String, Long> value: window.getValue().entrySet()) {
-					Tuple2<String, Long> resultTuple = Tuple2.of(value.getKey(), value.getValue());
+			Map.Entry<String, Map<Long, CountAndAccessTime>> campaignWindows = iterator.next();
+			for(Map.Entry<Long, CountAndAccessTime> window: campaignWindows.getValue().entrySet()) {
+				if(window.getKey() < watermark.getTimestamp() && window.getKey() >= lastWatermark) {
+					// emit window
+					Tuple3<String, Long, Long> resultTuple = Tuple3.of(campaignWindows.getKey(), window.getKey(), window.getValue().count);
 					output.collect(result.replace(resultTuple));
 				}
-		//		retainedWindows.put(window.getKey(), window.getValue());
-				lastSetTriggerTime = System.currentTimeMillis() + cleanupDelay;
-				registerTimer(lastSetTriggerTime, this);
-				iterator.remove();
 			}
-		} */
+		}
+		lastWatermark = watermark.getTimestamp();
 	}
 
-
-	@Override
-	public void trigger(long l) throws Exception {
-		// Cleanup windows, but only on the most recently set cleanup timer
-	//	if (l == lastSetTriggerTime) {
-		//	retainedWindows.clear();
-	//		lastSetTriggerTime = -1;
-	//	}
-	}
 
 	@Override
 	public StreamTaskState snapshotOperatorState(final long checkpointId, final long timestamp) throws Exception {
 		StreamTaskState taskState = super.snapshotOperatorState(checkpointId, timestamp);
 
 		synchronized (windows) {
-			final Map<String, Map<Long, Long>> stateSnapshot = new HashMap<>(windows.size());
+			final Map<String, Map<Long, CountAndAccessTime>> stateSnapshot = new HashMap<>(windows.size());
 
-			for (Map.Entry<String, Map<Long, Long>> window : windows.entrySet()) {
+			for (Map.Entry<String, Map<Long, CountAndAccessTime>> window : windows.entrySet()) {
 				stateSnapshot.put(window.getKey(), new HashMap<>(window.getValue()));
 			}
 
@@ -223,14 +215,16 @@ public class QueryableWindowOperator
 
 		for (int i = 0; i < numWindows; i++) {
 			String campaign = in.readUTF();
-			Map<Long, Long> window = new HashMap<>();
+			Map<Long, CountAndAccessTime> window = new HashMap<>();
 			windows.put(campaign, window);
 
 			int numKeys = in.readInt();
 
 			for (int j = 0; j < numKeys; j++) {
 				long key = in.readLong(); // ts
-				long value = in.readLong(); // count
+				CountAndAccessTime value = new CountAndAccessTime();
+				value.count = in.readLong();
+				value.lastAccessTime = in.readLong();
 				window.put(key, value);
 			}
 		}
@@ -249,7 +243,7 @@ public class QueryableWindowOperator
 		}
 
 		synchronized (windows) {
-			Map<Long, Long> window = windows.get(key);
+			Map<Long, CountAndAccessTime> window = windows.get(key);
 			if (timestamp == null) {
 				if (window != null) {
 					return "Campaign " + key + " has the following windows " + window.toString();
@@ -264,11 +258,11 @@ public class QueryableWindowOperator
 			long windowStart = timestamp - (timestamp % windowSize);
 			long windowEnd = windowStart + windowSize;
 
-			Long count = window.get(windowEnd);
+			CountAndAccessTime count = window.get(windowEnd);
 			if (count == null) {
 				return "Campaign " + key + " has the following windows " + window.toString();
 			} else {
-				return "count of campaign: " + key + " in window (" + windowStart + "," + windowEnd + "): " + count;
+				return "count of campaign: " + key + " in window (" + windowStart + "," + windowEnd + "): " + count.count + " last access " + count.lastAccessTime;
 			}
 		}
 
@@ -280,6 +274,17 @@ public class QueryableWindowOperator
 
 		return ctx.getTaskName() + " (" + ctx.getIndexOfThisSubtask() + "/" + ctx.getNumberOfParallelSubtasks() + ")";
 	}
+
+	private static class CountAndAccessTime implements Serializable {
+		long count;
+		long lastAccessTime;
+
+		@Override
+		public String toString() {
+			return "CountAndAccessTime{count=" + count + ", lastAccessTime=" + lastAccessTime +'}';
+		}
+	}
+
 
 	private static void initializeActorSystem(String hostname) throws UnknownHostException {
 		synchronized (actorSystemLock) {
@@ -316,13 +321,13 @@ public class QueryableWindowOperator
 
 		private final long checkpointId;
 		private final long timestamp;
-		private Map<String, Map<Long, Long>> stateSnapshot;
+		private Map<String, Map<Long, CountAndAccessTime>> stateSnapshot;
 		private StateBackend<?> backend;
 		private long size = 0;
 
 		public DataInputViewAsynchronousStateHandle(long checkpointId,
 				long timestamp,
-				Map<String, Map<Long, Long>> stateSnapshot,
+				Map<String, Map<Long, CountAndAccessTime>> stateSnapshot,
 				StateBackend<?> backend) {
 			this.checkpointId = checkpointId;
 			this.timestamp = timestamp;
@@ -340,14 +345,15 @@ public class QueryableWindowOperator
 			out.writeInt(numWindows);
 
 
-			for (Map.Entry<String, Map<Long, Long>> window: stateSnapshot.entrySet()) {
+			for (Map.Entry<String, Map<Long, CountAndAccessTime>> window: stateSnapshot.entrySet()) {
 				out.writeUTF(window.getKey());
 				int numKeys = window.getValue().size();
 				out.writeInt(numKeys);
 
-				for (Map.Entry<Long, Long> value : window.getValue().entrySet()) {
+				for (Map.Entry<Long, CountAndAccessTime> value : window.getValue().entrySet()) {
 					out.writeLong(value.getKey());
-					out.writeLong(value.getValue());
+					out.writeLong(value.getValue().count);
+					out.writeLong(value.getValue().lastAccessTime);
 				}
 			}
 

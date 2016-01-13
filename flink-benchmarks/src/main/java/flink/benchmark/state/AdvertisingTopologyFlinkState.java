@@ -27,6 +27,7 @@ import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.WindowedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.AscendingTimestampExtractor;
 import org.apache.flink.streaming.api.functions.TimestampExtractor;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
@@ -73,6 +74,11 @@ public class AdvertisingTopologyFlinkState {
         ymlMap.put("auto.offset.reset", "earliest");
         ParameterTool parameters = ParameterTool.fromMap(ymlMap);
 
+        long windowSize = parameters.getLong("window-size", 10_000);
+
+        String zookeeper = parameters.get("zookeeper", "localhost:2181");
+        String zooKeeperPath = parameters.get("zkPath", "/akkaQuery");
+
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
         env.getConfig().setGlobalJobParameters(parameters);
 
@@ -85,13 +91,13 @@ public class AdvertisingTopologyFlinkState {
             env.enableCheckpointing(parameters.getLong("flink.checkpoint-interval", 1000));
         }
 
-        env.setParallelism(1);
+        env.setParallelism(8);
 
         // use event time
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
         DataStream<String> rawMessageStream = env
-                .addSource(new FlinkKafkaConsumer082<String>(
+                .addSource(new FlinkKafkaConsumer082<>(
                         parameters.getRequired("kafka.topic"),
                         new SimpleStringSchema(),
                         parameters.getProperties()));
@@ -99,74 +105,36 @@ public class AdvertisingTopologyFlinkState {
         // log performance
         rawMessageStream.flatMap(new ThroughputLogger<String>(37 + 14 + 8));
 
-       DataStream<Tuple2<String, Long>> joinedAdImpressions = rawMessageStream
-                // Parse the String as JSON
-                .flatMap(new DeserializeBolt())
+        DataStream<Tuple2<String, Long>> joinedAdImpressions = rawMessageStream
+            // Parse the String as JSON
+            .flatMap(new DeserializeBolt())
 
-                // perform join with redis data
-                .flatMap(new RedisJoinBolt()) // campaign_id, event_time
+            // perform join with redis data
+            .flatMap(new RedisJoinBolt()) // campaign_id, event_time
 
-                // extract timestamps and generate watermarks from event_time
-                .assignTimestamps(new AdTimestampExtractor());
-
-      /*  DataStream<Tuple2<String, Long>> result = null;
-
-        long windowSize = parameters.getLong("window-size", 10_000);
-
-        String zookeeper = parameters.get("zookeeper", "localhost:2181");
-        String zooKeeperPath = parameters.get("zkPath", "/akkaQuery");
+            // extract timestamps and generate watermarks from event_time
+            .assignTimestamps(new AdTimestampExtractor());
 
         ZooKeeperConfiguration zooKeeperConfiguration = new ZooKeeperConfiguration(zooKeeperPath, zookeeper);
 
         RegistrationService registrationService = new ZooKeeperRegistrationService(zooKeeperConfiguration);
 
         // campaign_id, window end time
-        TypeInformation<Tuple2<String, Long>> resultType = TypeInfoParser.parse("Tuple2<String, Long>");
-        result = joinedAdImpressions
-                // process campaign
-                .keyBy(0) // campaign_id
-                .transform("Query Window",
-                        resultType,
-                        new QueryableWindowOperator(windowSize, registrationService)); */
+        TypeInformation<Tuple3<String, Long, Long>> resultType = TypeInfoParser.parse("Tuple3<String, Long, Long>");
+        DataStream<Tuple3<String, Long, Long>> result = joinedAdImpressions
+            // process campaign
+            .keyBy(0) // campaign_id
+            .transform("Query Window",
+                    resultType,
+                    new QueryableWindowOperator(windowSize, registrationService));
 
-
-
-        // optional: result stream: finished windows which go to a storage backend
-
-
-        // write result to redis
-      //  result.addSink(new RedisResultSink());
-    //    result.addSink(new RedisResultSinkOptimized());
+        if(parameters.has("write-result-path")) {
+            result.writeAsText(parameters.get("write-result-path")).disableChaining();
+        }
 
         env.execute();
     }
 
-    public static class EventAndProcessingTimeTrigger implements Trigger<Object, TimeWindow> {
-
-        @Override
-        public TriggerResult onElement(Object element, long timestamp, TimeWindow window, TriggerContext ctx) throws Exception {
-            ctx.registerEventTimeTimer(window.maxTimestamp());
-            // register system timer only for the first time
-            OperatorState<Boolean> firstTimerSet = ctx.getKeyValueState("firstTimerSet", false);
-            if(!firstTimerSet.value()) {
-                ctx.registerProcessingTimeTimer(System.currentTimeMillis() + 1000L);
-                firstTimerSet.update(true);
-            }
-            return TriggerResult.CONTINUE;
-        }
-
-        @Override
-        public TriggerResult onEventTime(long time, TimeWindow window, TriggerContext ctx) {
-            return TriggerResult.FIRE_AND_PURGE;
-        }
-
-        @Override
-        public TriggerResult onProcessingTime(long time, TimeWindow window, TriggerContext ctx) throws Exception {
-            // schedule next timer
-            ctx.registerProcessingTimeTimer(System.currentTimeMillis() + 1000L);
-            return TriggerResult.FIRE;
-        }
-    }
 
     public static class DeserializeBolt implements FlatMapFunction<String, Tuple2<String, String>> {
 
@@ -210,34 +178,25 @@ public class AdvertisingTopologyFlinkState {
             if(campaign_id == null) {
                 return;
             }
+            System.out.println("survived join");
             Tuple2<String, Long> tuple = new Tuple2<>(campaign_id, Long.parseLong(input.f1));
             out.collect(tuple);
         }
+
     }
 
-    private static class AdTimestampExtractor implements TimestampExtractor<Tuple2<String, Long>> {
-
-        long watermark = Long.MIN_VALUE;
+    private static class AdTimestampExtractor extends AscendingTimestampExtractor<Tuple2<String, Long>> {
         @Override
-        public long extractTimestamp(Tuple2<String, Long> element, long currentTimestamp) {
-            long time = element.f1;
-            this.watermark = Math.max(time - 60000L, this.watermark); // we assume the latest possible delay to be 60 seconds.
-            return time;
-        }
-
-        @Override
-        public long extractWatermark(Tuple2<String, Long> element, long currentTimestamp) {
-            return Long.MIN_VALUE;
-        }
-
-        @Override
-        public long getCurrentWatermark() {
-            return watermark;
+        public long extractAscendingTimestamp(Tuple2<String, Long> element, long currentTimestamp) {
+            return element.f1;
         }
     }
 
 
-
+	/**
+     * Simple utility to log throughput
+     * @param <T>
+     */
     public static class ThroughputLogger<T> implements FlatMapFunction<T, Integer> {
         long received = 0;
         long logfreq = 50000;
