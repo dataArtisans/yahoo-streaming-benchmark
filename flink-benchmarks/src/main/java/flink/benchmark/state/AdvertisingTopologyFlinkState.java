@@ -5,51 +5,31 @@
 package flink.benchmark.state;
 
 import benchmark.common.advertising.RedisAdCampaignCache;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import flink.benchmark.Utils;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
-import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatMapFunction;
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.common.functions.ReduceFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
-import org.apache.flink.api.common.state.OperatorState;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
-import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.api.java.tuple.Tuple7;
 import org.apache.flink.api.java.typeutils.TypeInfoParser;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.datastream.WindowedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AscendingTimestampExtractor;
-import org.apache.flink.streaming.api.functions.TimestampExtractor;
-import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
-import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
-import org.apache.flink.streaming.api.windowing.time.Time;
-import org.apache.flink.streaming.api.windowing.triggers.Trigger;
-import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
-import org.apache.flink.streaming.util.serialization.DeserializationSchema;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
-import redis.clients.jedis.Jedis;
 
 import java.io.FileInputStream;
-import java.io.IOException;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 
 /**
  * To Run:  flink run target/flink-benchmarks-0.1.0-AdvertisingTopologyNative.jar  --confPath "../conf/benchmarkConf.yaml"
@@ -68,15 +48,18 @@ public class AdvertisingTopologyFlinkState {
         // load yaml file
         Yaml yml = new Yaml(new SafeConstructor());
         Map ymlMap = (Map) yml.load(new FileInputStream(args[0]));
-        ymlMap.put("zookeeper.connect", "localhost:"+Integer.toString((Integer)ymlMap.get("zookeeper.port")) ); //TODO hack
+      /*  ymlMap.put("zookeeper.connect", "localhost:"+Integer.toString((Integer)ymlMap.get("zookeeper.port")) );
         ymlMap.put("group.id", "abcaaak" + UUID.randomUUID());
         ymlMap.put("bootstrap.servers", "localhost:9092");
-        ymlMap.put("auto.offset.reset", "earliest");
+        ymlMap.put("auto.offset.reset", "earliest"); */
+        String zookeeper = Utils.getZookeeperServers(ymlMap);
+        ymlMap.put("zookeeper.connect", zookeeper); // set ZK connect for Kafka
+        ymlMap.put("bootstrap.servers", Utils.getKafkaBrokers(ymlMap));
+
         ParameterTool parameters = ParameterTool.fromMap(ymlMap);
 
         long windowSize = parameters.getLong("window-size", 10_000);
 
-        String zookeeper = parameters.get("zookeeper", "localhost:2181");
         String zooKeeperPath = parameters.get("zkPath", "/akkaQuery");
 
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
@@ -90,8 +73,6 @@ public class AdvertisingTopologyFlinkState {
             // enable checkpointing for fault tolerance
             env.enableCheckpointing(parameters.getLong("flink.checkpoint-interval", 1000));
         }
-
-        env.setParallelism(8);
 
         // use event time
         env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
