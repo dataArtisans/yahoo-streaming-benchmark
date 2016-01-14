@@ -28,11 +28,14 @@ import joptsimple.OptionSet;
 import joptsimple.OptionSpec;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import redis.clients.jedis.Jedis;
 import scala.concurrent.Await;
 import scala.concurrent.Future;
 import scala.concurrent.duration.Duration;
 import scala.concurrent.duration.FiniteDuration;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 
 public class AkkaStateQuery {
@@ -79,6 +82,12 @@ public class AkkaStateQuery {
 				.ofType(Integer.class)
 				.defaultsTo(8);
 
+		OptionSpec<Long> periodicQuery = parser
+				.accepts("periodicQuery")
+				.withRequiredArg() // sleep time in ms
+				.ofType(Long.class)
+				.defaultsTo(-1L);
+
 		OptionSet options = parser.parse(args);
 
 		String zookeeper = zookeeperOption.value(options);
@@ -87,6 +96,7 @@ public class AkkaStateQuery {
 		String queryTimeoutStr = queryTimeoutOption.value(options);
 		int queryAttempts = queryAttemptsOption.value(options);
 		int maxTimeoutsUntilRefresh = maxTimeoutsUntilRefreshOption.value(options);
+		long periodicQuerySleepTime = periodicQuery.value(options);
 
 		FiniteDuration lookupTimeout;
 		FiniteDuration queryTimeout;
@@ -126,6 +136,33 @@ public class AkkaStateQuery {
 				queryAttempts,
 				maxTimeoutsUntilRefresh),
 			"queryActor");
+
+		if(periodicQuerySleepTime > 0) {
+
+			System.out.println("The tool will periodically query the following campaign IDs:");
+			Jedis redis = new Jedis("localhost");
+			List<String> campaigns = new ArrayList<>(redis.smembers("campaigns"));
+			for(String campaign: campaigns) {
+				System.out.println("- " + campaign);
+			}
+			// periodically query
+			int campaignId = 0;
+			while(true) {
+
+				Future<Object> futureResult = Patterns.ask(
+						queryActor,
+						new QueryState<>(null, campaigns.get(campaignId++)),
+						new Timeout(askTimeout));
+
+				Object result = Await.result(futureResult, askTimeout);
+
+				System.out.println(result);
+				if(campaignId == campaigns.size()) {
+					campaignId = 0;
+				}
+				Thread.sleep(periodicQuerySleepTime);
+			}
+		}
 
 		boolean continueQuery = true;
 		Scanner scanner = new Scanner(System.in);

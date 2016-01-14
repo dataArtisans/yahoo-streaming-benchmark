@@ -128,9 +128,9 @@ public class AdvertisingTopologyFlinkState {
                     resultType,
                     new QueryableWindowOperator(windowSize, registrationService));
 
-        if(parameters.has("write-result-path")) {
+    /*    if(parameters.has("write-result-path")) {
             result.writeAsText(parameters.get("write-result-path")).disableChaining();
-        }
+        } */
 
         env.execute();
     }

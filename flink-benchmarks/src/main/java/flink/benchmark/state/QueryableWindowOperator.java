@@ -46,6 +46,7 @@ import java.net.UnknownHostException;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
 public class QueryableWindowOperator
@@ -146,8 +147,10 @@ public class QueryableWindowOperator
 			if (previous == null) {
 				previous = new CountAndAccessTime();
 				previous.count = 1L;
+				previous.lastEventTime = timestamp;
 			} else {
 				previous.count++;
+				previous.lastEventTime = Math.max(previous.lastEventTime, timestamp);
 			}
 			previous.lastAccessTime = System.currentTimeMillis();
 			window.put(windowEnd, previous);
@@ -156,7 +159,9 @@ public class QueryableWindowOperator
 
 	@Override
 	public void processWatermark(Watermark watermark) throws Exception {
-		StreamRecord<Tuple3<String, Long, Long>> result = new StreamRecord<>(null, -1);
+		// we'll keep state forever in the operator
+
+	/*	StreamRecord<Tuple3<String, Long, Long>> result = new StreamRecord<>(null, -1);
 
 		Iterator<Map.Entry<String, Map<Long, CountAndAccessTime>>> iterator = windows.entrySet().iterator();
 		while (iterator.hasNext()) {
@@ -169,7 +174,7 @@ public class QueryableWindowOperator
 				}
 			}
 		}
-		lastWatermark = watermark.getTimestamp();
+		lastWatermark = watermark.getTimestamp(); **/
 	}
 
 
@@ -224,15 +229,22 @@ public class QueryableWindowOperator
 				CountAndAccessTime value = new CountAndAccessTime();
 				value.count = in.readLong();
 				value.lastAccessTime = in.readLong();
+				value.lastEventTime = in.readLong();
 				window.put(key, value);
 			}
 		}
 	}
 
+	/**
+	 * Note: This method has nothing to do with a regular getValue() implementation.
+	 * Its more designed as a remote debugger
+	 *
+	 * @throws WrongKeyPartitionException
+	 */
 	@Override
 	public String getValue(Long timestamp, String key) throws WrongKeyPartitionException {
 		LOG.info("Query for timestamp {} and key {}", timestamp, key);
-		if (key.hashCode() % getRuntimeContext().getNumberOfParallelSubtasks() != getRuntimeContext().getIndexOfThisSubtask()) {
+		if (Math.abs(key.hashCode() % getRuntimeContext().getNumberOfParallelSubtasks()) != getRuntimeContext().getIndexOfThisSubtask()) {
 			throw new WrongKeyPartitionException("Key " + key + " is not part of the partition " +
 					"of subtask " + getRuntimeContext().getIndexOfThisSubtask());
 		}
@@ -245,7 +257,11 @@ public class QueryableWindowOperator
 			Map<Long, CountAndAccessTime> window = windows.get(key);
 			if (timestamp == null) {
 				if (window != null) {
-					return "Campaign " + key + " has the following windows " + window.toString();
+					// return the latency of the last window:
+					TreeMap<Long, CountAndAccessTime> orderedMap = new TreeMap<>(window);
+					Map.Entry<Long, CountAndAccessTime> first = orderedMap.lastEntry();
+					LOG.info("first {} of {}", first, window);
+					return Long.toString(first.getValue().lastAccessTime - first.getValue().lastEventTime);
 				} else {
 					return "Key is not known. Available campaign IDs " + windows.keySet().toString();
 				}
@@ -261,7 +277,7 @@ public class QueryableWindowOperator
 			if (count == null) {
 				return "Campaign " + key + " has the following windows " + window.toString();
 			} else {
-				return "count of campaign: " + key + " in window (" + windowStart + "," + windowEnd + "): " + count.count + " last access " + count.lastAccessTime;
+				return "count of campaign: " + key + " in window (" + windowStart + "," + windowEnd + "): " + count.count + " latency " + (count.lastAccessTime - count.lastEventTime);
 			}
 		}
 
@@ -277,6 +293,7 @@ public class QueryableWindowOperator
 	private static class CountAndAccessTime implements Serializable {
 		long count;
 		long lastAccessTime;
+		long lastEventTime;
 
 		@Override
 		public String toString() {
@@ -353,6 +370,7 @@ public class QueryableWindowOperator
 					out.writeLong(value.getKey());
 					out.writeLong(value.getValue().count);
 					out.writeLong(value.getValue().lastAccessTime);
+					out.writeLong(value.getValue().lastEventTime);
 				}
 			}
 

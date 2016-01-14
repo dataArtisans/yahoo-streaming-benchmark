@@ -110,6 +110,6 @@ public class ZooKeeperRetrievalService<K> implements RetrievalService<K> {
 		if(actorMap == null) {
 			throw new RuntimeException("Actor map is null");
 		}
-		return key.hashCode() % actorMap.size();
+		return Math.abs(key.hashCode() % actorMap.size());
 	}
 }
