@@ -107,6 +107,9 @@ public class ZooKeeperRetrievalService<K> implements RetrievalService<K> {
 
 	@Override
 	public int getPartitionID(K key) {
+		if(actorMap == null) {
+			throw new RuntimeException("Actor map is null");
+		}
 		return key.hashCode() % actorMap.size();
 	}
 }

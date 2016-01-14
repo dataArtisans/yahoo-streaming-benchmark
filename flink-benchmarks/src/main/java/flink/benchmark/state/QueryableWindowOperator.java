@@ -129,7 +129,6 @@ public class QueryableWindowOperator
 
 	@Override
 	public void processElement(StreamRecord<Tuple2<String, Long>> streamRecord) throws Exception {
-		System.out.println("Process element " + streamRecord);
 		long timestamp = streamRecord.getTimestamp();
 		long windowStart = timestamp - (timestamp % windowSize);
 		long windowEnd = windowStart + windowSize;

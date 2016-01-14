@@ -6,6 +6,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
+import org.apache.flink.streaming.connectors.kafka.partitioner.FixedPartitioner;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.XORShiftRandom;
 import redis.clients.jedis.Jedis;
@@ -63,7 +64,7 @@ public class AdImpressionsGenerator {
 
 		adImpressions.flatMap(new AdvertisingTopologyFlinkWindows.ThroughputLogger<String>(240, 1_000_000));
 
-		adImpressions.addSink(new FlinkKafkaProducer<>(parameterTool.getRequired("kafka.topic"), new SimpleStringSchema(), parameterTool.getProperties()));
+		adImpressions.addSink(new FlinkKafkaProducer<>(parameterTool.getRequired("kafka.topic"), new SimpleStringSchema(), parameterTool.getProperties(), new FixedPartitioner()));
 
 		env.execute("Ad Impressions data generator " + parameterTool.toMap().toString());
 	}

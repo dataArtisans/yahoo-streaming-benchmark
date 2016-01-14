@@ -178,7 +178,6 @@ public class AdvertisingTopologyFlinkState {
             if(campaign_id == null) {
                 return;
             }
-            System.out.println("survived join");
             Tuple2<String, Long> tuple = new Tuple2<>(campaign_id, Long.parseLong(input.f1));
             out.collect(tuple);
         }
