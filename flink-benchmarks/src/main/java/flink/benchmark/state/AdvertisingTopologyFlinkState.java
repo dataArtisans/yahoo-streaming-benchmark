@@ -91,10 +91,10 @@ public class AdvertisingTopologyFlinkState {
             .flatMap(new DeserializeBolt())
 
             // perform join with redis data
-            .flatMap(new RedisJoinBolt()) // campaign_id, event_time
+            .flatMap(new RedisJoinBolt()); // campaign_id, event_time
 
             // extract timestamps and generate watermarks from event_time
-            .assignTimestamps(new AdTimestampExtractor());
+           // ignore TS for now. we are not emitting .assignTimestamps(new AdTimestampExtractor());
 
         ZooKeeperConfiguration zooKeeperConfiguration = new ZooKeeperConfiguration(zooKeeperPath, zookeeper);
 
