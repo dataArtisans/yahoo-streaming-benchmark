@@ -146,6 +146,7 @@ public class QueryableWindowOperator
 			CountAndAccessTime previous = window.get(windowEnd);
 			if (previous == null) {
 				previous = new CountAndAccessTime();
+				window.put(windowEnd, previous);
 				previous.count = 1L;
 				previous.lastEventTime = timestamp;
 			} else {
@@ -153,7 +154,6 @@ public class QueryableWindowOperator
 				previous.lastEventTime = Math.max(previous.lastEventTime, timestamp);
 			}
 			previous.lastAccessTime = System.currentTimeMillis();
-			window.put(windowEnd, previous);
 		}
 	}
 
@@ -255,21 +255,23 @@ public class QueryableWindowOperator
 
 		synchronized (windows) {
 			Map<Long, CountAndAccessTime> window = windows.get(key);
-			if (timestamp == null) {
-				if (window != null) {
-					// return the latency of the last window:
-					TreeMap<Long, CountAndAccessTime> orderedMap = new TreeMap<>(window);
-					Map.Entry<Long, CountAndAccessTime> first = orderedMap.lastEntry();
-					LOG.info("first {} of {}", first, window);
-					return Long.toString(first.getValue().lastAccessTime - first.getValue().lastEventTime);
-				} else {
-					return "Key is not known. Available campaign IDs " + windows.keySet().toString();
-				}
-			}
 			if (window == null) {
 				return "Key is not known. Available campaign IDs " + windows.keySet().toString();
 			}
-			// campaign id (key) and timestamp are set
+			if (timestamp == null) {
+				// return the latency of the last window:
+				TreeMap<Long, CountAndAccessTime> orderedMap = new TreeMap<>(window);
+				Map.Entry<Long, CountAndAccessTime> first = orderedMap.lastEntry();
+				return Long.toString(first.getValue().lastAccessTime - first.getValue().lastEventTime);
+			} else {
+				// query with timestamp:
+				CountAndAccessTime cat = window.get(timestamp % windowSize);
+				if(cat == null) {
+					return "Timestamp not available";
+				}
+				return Long.toString(cat.lastAccessTime - cat.lastEventTime);
+			}
+		/*	// campaign id (key) and timestamp are set
 			long windowStart = timestamp - (timestamp % windowSize);
 			long windowEnd = windowStart + windowSize;
 
@@ -278,7 +280,7 @@ public class QueryableWindowOperator
 				return "Campaign " + key + " has the following windows " + window.toString();
 			} else {
 				return "count of campaign: " + key + " in window (" + windowStart + "," + windowEnd + "): " + count.count + " latency " + (count.lastAccessTime - count.lastEventTime);
-			}
+			} */
 		}
 
 	}

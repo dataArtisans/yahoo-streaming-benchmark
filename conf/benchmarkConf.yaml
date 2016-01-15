@@ -22,3 +22,6 @@ storm.ackers: 2
 
 #Spark Specific
 spark.batchtime: 2000
+
+#Flink specific
+group.id: "someString"

@@ -1,4 +1,4 @@
-package flink.benchmark;
+package flink.benchmark.utils;
 
 import java.util.List;
 import java.util.Map;

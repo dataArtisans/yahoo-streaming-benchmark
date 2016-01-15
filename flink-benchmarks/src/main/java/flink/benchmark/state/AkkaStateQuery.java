@@ -148,10 +148,11 @@ public class AkkaStateQuery {
 			// periodically query
 			int campaignId = 0;
 			while(true) {
-
+				// query 5 seconds ago
+				Long time = System.currentTimeMillis() - 5000;
 				Future<Object> futureResult = Patterns.ask(
 						queryActor,
-						new QueryState<>(null, campaigns.get(campaignId++)),
+						new QueryState<>(time, campaigns.get(campaignId++)),
 						new Timeout(askTimeout));
 
 				Object result = Await.result(futureResult, askTimeout);

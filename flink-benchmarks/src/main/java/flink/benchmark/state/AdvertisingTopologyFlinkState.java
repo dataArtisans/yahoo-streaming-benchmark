@@ -5,7 +5,7 @@
 package flink.benchmark.state;
 
 import benchmark.common.advertising.RedisAdCampaignCache;
-import flink.benchmark.Utils;
+import flink.benchmark.utils.Utils;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.FlatMapFunction;
@@ -47,7 +47,7 @@ public class AdvertisingTopologyFlinkState {
 
         // load yaml file
         Yaml yml = new Yaml(new SafeConstructor());
-        Map ymlMap = (Map) yml.load(new FileInputStream(args[0]));
+        Map<String, String> ymlMap = (Map) yml.load(new FileInputStream(args[0]));
       /*  ymlMap.put("zookeeper.connect", "localhost:"+Integer.toString((Integer)ymlMap.get("zookeeper.port")) );
         ymlMap.put("group.id", "abcaaak" + UUID.randomUUID());
         ymlMap.put("bootstrap.servers", "localhost:9092");
@@ -55,6 +55,9 @@ public class AdvertisingTopologyFlinkState {
         String zookeeper = Utils.getZookeeperServers(ymlMap);
         ymlMap.put("zookeeper.connect", zookeeper); // set ZK connect for Kafka
         ymlMap.put("bootstrap.servers", Utils.getKafkaBrokers(ymlMap));
+        for(Map.Entry e : ymlMap.entrySet()) {{
+            e.setValue(e.getValue().toString());
+        }}
 
         ParameterTool parameters = ParameterTool.fromMap(ymlMap);
 
