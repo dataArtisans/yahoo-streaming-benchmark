@@ -38,9 +38,6 @@ public class AdvertisingTopologyNative {
         ParameterTool parameterTool = ParameterTool.fromArgs(args);
 
         Map conf = Utils.findAndReadConfigFile(parameterTool.getRequired("confPath"), true);
-        int kafkaPartitions = ((Number)conf.get("kafka.partitions")).intValue();
-        int hosts = ((Number)conf.get("process.hosts")).intValue();
-        int cores = ((Number)conf.get("process.cores")).intValue();
 
         ParameterTool flinkBenchmarkParams = ParameterTool.fromMap(getFlinkConfs(conf));
 
@@ -59,13 +56,12 @@ public class AdvertisingTopologyNative {
             env.enableCheckpointing(flinkBenchmarkParams.getLong("flink.checkpoint-interval", 1000));
         }
         // set default parallelism for all operators (recommended value: number of available worker CPU cores in the cluster (hosts * cores))
-        env.setParallelism(1); //TODO set to 1 for benchmark only.
 
         Properties kProps = flinkBenchmarkParams.getProperties();
-        kProps.setProperty("auto.offset.reset", "earliest");
+    //    kProps.setProperty("auto.offset.reset", "earliest");
         kProps.setProperty("group.id", "earlasdiest"+UUID.randomUUID());
         DataStream<String> messageStream = env
-                .addSource(new FlinkKafkaConsumer082<String>(
+                .addSource(new FlinkKafkaConsumer082<>(
                         flinkBenchmarkParams.getRequired("topic"),
                         new SimpleStringSchema(),
                         kProps));

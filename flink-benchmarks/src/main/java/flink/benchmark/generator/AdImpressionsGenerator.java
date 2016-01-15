@@ -25,6 +25,10 @@ import java.util.UUID;
  *
  * (by default) we generate 100 campaigns, with 10 ads each.
  * We write those 1000 ads into Redis, with ad_is --> campaign_id
+ *
+ *
+ *
+ *
  */
 public class AdImpressionsGenerator {
 
