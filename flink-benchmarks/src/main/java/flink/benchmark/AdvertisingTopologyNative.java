@@ -7,6 +7,7 @@ package flink.benchmark;
 import benchmark.common.advertising.RedisAdCampaignCache;
 import benchmark.common.advertising.CampaignProcessorCommon;
 import benchmark.common.Utils;
+import flink.benchmark.utils.ThroughputLogger;
 import org.apache.flink.api.common.functions.*;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
@@ -66,7 +67,7 @@ public class AdvertisingTopologyNative {
                         new SimpleStringSchema(),
                         kProps));
 
-        messageStream.flatMap(new AdvertisingTopologyFlinkWindows.ThroughputLogger<String>(250, 50_000));
+        messageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
 
         messageStream
                 .rebalance()

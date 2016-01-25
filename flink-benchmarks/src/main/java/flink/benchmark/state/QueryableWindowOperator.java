@@ -104,7 +104,7 @@ public class QueryableWindowOperator
 			registrationService.start();
 
 			String hostname = registrationService.getConnectingHostname();
-			String actorName = "responseActor_" + getRuntimeContext().getIndexOfThisSubtask();
+			String actorName = "responseActor_" + getRuntimeContext().getIndexOfThisSubtask() + System.nanoTime();
 
 			initializeActorSystem(hostname);
 
@@ -130,7 +130,7 @@ public class QueryableWindowOperator
 
 	@Override
 	public void processElement(StreamRecord<Tuple2<String, Long>> streamRecord) throws Exception {
-		long timestamp = streamRecord.getTimestamp();
+		long timestamp = streamRecord.getValue().f1;
 		long windowStart = timestamp - (timestamp % windowSize);
 		long windowEnd = windowStart + windowSize;
 
@@ -265,7 +265,9 @@ public class QueryableWindowOperator
 				return Long.toString(first.getValue().lastAccessTime - first.getValue().lastEventTime);
 			} else {
 				// query with timestamp:
-				CountAndAccessTime cat = window.get(timestamp % windowSize);
+				long windowStart = timestamp - (timestamp % windowSize);
+				long windowEnd = windowStart + windowSize;
+				CountAndAccessTime cat = window.get(windowEnd);
 				if(cat == null) {
 					return "Timestamp not available";
 				}

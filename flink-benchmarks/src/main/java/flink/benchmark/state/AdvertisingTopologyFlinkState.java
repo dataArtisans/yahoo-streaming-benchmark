@@ -5,6 +5,8 @@
 package flink.benchmark.state;
 
 import benchmark.common.advertising.RedisAdCampaignCache;
+import flink.benchmark.generator.EventGenerator;
+import flink.benchmark.utils.ThroughputLogger;
 import flink.benchmark.utils.Utils;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
@@ -20,6 +22,7 @@ import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AscendingTimestampExtractor;
+import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
@@ -32,188 +35,161 @@ import java.io.FileInputStream;
 import java.util.Map;
 
 /**
- * To Run:  flink run target/flink-benchmarks-0.1.0-AdvertisingTopologyNative.jar  --confPath "../conf/benchmarkConf.yaml"
- *
- *
+ * To Run:  flink run target/flink-benchmarks-0.1.0-AdvertisingTopologyNative.jar  "../conf/benchmarkConf.yaml"
+ * <p/>
+ * <p/>
  * Implementation where all state is kept in Flink (not in redis)
- *
  */
 public class AdvertisingTopologyFlinkState {
 
-    private static final Logger LOG = LoggerFactory.getLogger(AdvertisingTopologyFlinkState.class);
+  private static final Logger LOG = LoggerFactory.getLogger(AdvertisingTopologyFlinkState.class);
 
 
-    public static void main(final String[] args) throws Exception {
+  public static void main(final String[] args) throws Exception {
 
-        // load yaml file
-        Yaml yml = new Yaml(new SafeConstructor());
-        Map<String, String> ymlMap = (Map) yml.load(new FileInputStream(args[0]));
-      /*  ymlMap.put("zookeeper.connect", "localhost:"+Integer.toString((Integer)ymlMap.get("zookeeper.port")) );
-        ymlMap.put("group.id", "abcaaak" + UUID.randomUUID());
-        ymlMap.put("bootstrap.servers", "localhost:9092");
-        ymlMap.put("auto.offset.reset", "earliest"); */
-        String zookeeper = Utils.getZookeeperServers(ymlMap);
-        ymlMap.put("zookeeper.connect", zookeeper); // set ZK connect for Kafka
-        ymlMap.put("bootstrap.servers", Utils.getKafkaBrokers(ymlMap));
-        for(Map.Entry e : ymlMap.entrySet()) {{
-            e.setValue(e.getValue().toString());
-        }}
+    // load yaml file
+    Yaml yml = new Yaml(new SafeConstructor());
+    Map<String, String> ymlMap = (Map) yml.load(new FileInputStream(args[0]));
+    String kafkaZookeeperConnect = Utils.getZookeeperServers(ymlMap, String.valueOf(ymlMap.get("kafka.zookeeper.path")));
+    String akkaZookeeperQuorum = Utils.getZookeeperServers(ymlMap, "");
+    ymlMap.put("zookeeper.connect", kafkaZookeeperConnect); // set ZK connect for Kafka
+    ymlMap.put("bootstrap.servers", Utils.getKafkaBrokers(ymlMap));
+    for (Map.Entry e : ymlMap.entrySet()) {
+      {
+        e.setValue(e.getValue().toString());
+      }
+    }
 
-        ParameterTool parameters = ParameterTool.fromMap(ymlMap);
+    ParameterTool parameters = ParameterTool.fromMap(ymlMap);
 
-        long windowSize = parameters.getLong("window-size", 10_000);
+    long windowSize = parameters.getLong("window.size", 10_000);
 
-        String zooKeeperPath = parameters.get("zkPath", "/akkaQuery");
+    String akkaZookeeperPath = parameters.get("akka.zookeeper.path", "/akkaQuery");
 
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        env.getConfig().setGlobalJobParameters(parameters);
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.getConfig().setGlobalJobParameters(parameters);
 
-		// Set the buffer timeout (default 100)
-        // Lowering the timeout will lead to lower latencies, but will eventually reduce throughput.
-        env.setBufferTimeout(parameters.getLong("flink.buffer-timeout", 100));
+    // Set the buffer timeout (default 100)
+    // Lowering the timeout will lead to lower latencies, but will eventually reduce throughput.
+    env.setBufferTimeout(parameters.getLong("flink.buffer.timeout", 100));
 
-        if(parameters.has("flink.checkpoint-interval")) {
-            // enable checkpointing for fault tolerance
-            env.enableCheckpointing(parameters.getLong("flink.checkpoint-interval", 1000));
-        }
+    if (parameters.has("flink.checkpoint.interval")) {
+      // enable checkpointing for fault tolerance
+      env.enableCheckpointing(parameters.getLong("flink.checkpoint-interval", 1000));
+    }
 
-        // use event time
-        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+    // use event time
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
-        DataStream<String> rawMessageStream = env
-                .addSource(new FlinkKafkaConsumer082<>(
-                        parameters.getRequired("kafka.topic"),
-                        new SimpleStringSchema(),
-                        parameters.getProperties()));
+    RichParallelSourceFunction<String> source;
+    String sourceName;
+    if (parameters.has("use.local.event.generator")) {
+      EventGenerator eventGenerator = new EventGenerator(parameters);
+      eventGenerator.prepareRedis();
+      eventGenerator.writeCampaignFile();
+      source = eventGenerator.createSource();
+      sourceName = "EventGenerator";
+    } else {
+      source = kafkaSource(parameters);
+      sourceName = "Kafka";
+    }
 
-        // log performance
-        rawMessageStream.flatMap(new ThroughputLogger<String>(37 + 14 + 8));
+    DataStream<String> rawMessageStream = env.addSource(source, sourceName);
 
-        DataStream<Tuple2<String, Long>> joinedAdImpressions = rawMessageStream
-            // Parse the String as JSON
-            .flatMap(new DeserializeBolt())
+    // log performance
+    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
 
-            // perform join with redis data
-            .flatMap(new RedisJoinBolt()); // campaign_id, event_time
+    DataStream<Tuple2<String, Long>> joinedAdImpressions = rawMessageStream
+      // Parse the String as JSON
+      .flatMap(new DeserializeBolt())
 
-            // extract timestamps and generate watermarks from event_time
-           // ignore TS for now. we are not emitting .assignTimestamps(new AdTimestampExtractor());
+        // perform join with redis data
+      .flatMap(new RedisJoinBolt()); // campaign_id, event_time
 
-        ZooKeeperConfiguration zooKeeperConfiguration = new ZooKeeperConfiguration(zooKeeperPath, zookeeper);
+      //.assignTimestamps(new AdTimestampExtractor());
 
-        RegistrationService registrationService = new ZooKeeperRegistrationService(zooKeeperConfiguration);
+    ZooKeeperConfiguration zooKeeperConfiguration = new ZooKeeperConfiguration(akkaZookeeperPath, akkaZookeeperQuorum);
 
-        // campaign_id, window end time
-        TypeInformation<Tuple3<String, Long, Long>> resultType = TypeInfoParser.parse("Tuple3<String, Long, Long>");
-        DataStream<Tuple3<String, Long, Long>> result = joinedAdImpressions
-            // process campaign
-            .keyBy(0) // campaign_id
-            .transform("Query Window",
-                    resultType,
-                    new QueryableWindowOperator(windowSize, registrationService));
+    RegistrationService registrationService = new ZooKeeperRegistrationService(zooKeeperConfiguration);
+
+    // campaign_id, window end time
+    TypeInformation<Tuple3<String, Long, Long>> resultType = TypeInfoParser.parse("Tuple3<String, Long, Long>");
+    DataStream<Tuple3<String, Long, Long>> result = joinedAdImpressions
+      // process campaign
+      .keyBy(0) // campaign_id
+      .transform("Query Window",
+        resultType,
+        new QueryableWindowOperator(windowSize, registrationService));
 
     /*    if(parameters.has("write-result-path")) {
             result.writeAsText(parameters.get("write-result-path")).disableChaining();
         } */
 
-        env.execute();
+    env.execute();
+  }
+
+  private static FlinkKafkaConsumer082<String> kafkaSource(ParameterTool parameters) {
+    return new FlinkKafkaConsumer082<String>(
+      parameters.getRequired("kafka.topic"),
+      new SimpleStringSchema(),
+      parameters.getProperties());
+  }
+
+  public static class DeserializeBolt implements FlatMapFunction<String, Tuple2<String, String>> {
+
+    transient JSONParser p = null;
+
+    @Override
+    public void flatMap(String input, Collector<Tuple2<String, String>> out)
+      throws Exception {
+      if (p == null) {
+        p = new JSONParser();
+        ;
+      }
+      JSONObject obj = (JSONObject) p.parse(input);
+      // filter
+      if (obj.getAsString("event_type").equals("view")) {
+        // project
+        Tuple2<String, String> tuple = new Tuple2<>(obj.getAsString("ad_id"), obj.getAsString("event_time"));
+        out.collect(tuple);
+      }
+    }
+  }
+
+
+  public static final class RedisJoinBolt extends RichFlatMapFunction<Tuple2<String, String>, Tuple2<String, Long>> {
+
+    RedisAdCampaignCache redisAdCampaignCache;
+
+    @Override
+    public void open(Configuration parameters) {
+      //initialize jedis
+      ParameterTool parameterTool = (ParameterTool) getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
+      String redis_host = parameterTool.getRequired("redis.host");
+      LOG.info("Opening connection with Jedis to {}", redis_host);
+      this.redisAdCampaignCache = new RedisAdCampaignCache(redis_host);
+      this.redisAdCampaignCache.prepare();
     }
 
-
-    public static class DeserializeBolt implements FlatMapFunction<String, Tuple2<String, String>> {
-
-        transient JSONParser p = null;
-        @Override
-        public void flatMap(String input, Collector<Tuple2<String, String>> out)
-                throws Exception {
-            if(p == null) {
-                p = new JSONParser();;
-            }
-            JSONObject obj = (JSONObject) p.parse(input);
-            // filter
-            if(obj.getAsString("event_type").equals("view")) {
-                // project
-                Tuple2<String, String> tuple = new Tuple2<>(obj.getAsString("ad_id"), obj.getAsString("event_time"));
-                out.collect(tuple);
-            }
-        }
+    @Override
+    public void flatMap(Tuple2<String, String> input,
+      Collector<Tuple2<String, Long>> out) throws Exception {
+      String ad_id = input.getField(0);
+      String campaign_id = this.redisAdCampaignCache.execute(ad_id);
+      if (campaign_id == null) {
+        return;
+      }
+      Tuple2<String, Long> tuple = new Tuple2<>(campaign_id, Long.parseLong(input.f1));
+      out.collect(tuple);
     }
 
+  }
 
-    public static final class RedisJoinBolt extends RichFlatMapFunction<Tuple2<String, String>, Tuple2<String, Long>> {
-
-        RedisAdCampaignCache redisAdCampaignCache;
-
-        @Override
-        public void open(Configuration parameters) {
-            //initialize jedis
-            ParameterTool parameterTool = (ParameterTool) getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
-            String redis_host = parameterTool.getRequired("redis.host");
-            LOG.info("Opening connection with Jedis to {}", redis_host);
-            this.redisAdCampaignCache = new RedisAdCampaignCache(redis_host);
-            this.redisAdCampaignCache.prepare();
-        }
-
-        @Override
-        public void flatMap(Tuple2<String, String> input,
-                            Collector<Tuple2<String, Long>> out) throws Exception {
-            String ad_id = input.getField(0);
-            String campaign_id = this.redisAdCampaignCache.execute(ad_id);
-            if(campaign_id == null) {
-                return;
-            }
-            Tuple2<String, Long> tuple = new Tuple2<>(campaign_id, Long.parseLong(input.f1));
-            out.collect(tuple);
-        }
-
+  private static class AdTimestampExtractor extends AscendingTimestampExtractor<Tuple2<String, Long>> {
+    @Override
+    public long extractAscendingTimestamp(Tuple2<String, Long> element, long currentTimestamp) {
+      return element.f1;
     }
+  }
 
-    private static class AdTimestampExtractor extends AscendingTimestampExtractor<Tuple2<String, Long>> {
-        @Override
-        public long extractAscendingTimestamp(Tuple2<String, Long> element, long currentTimestamp) {
-            return element.f1;
-        }
-    }
-
-
-	/**
-     * Simple utility to log throughput
-     * @param <T>
-     */
-    public static class ThroughputLogger<T> implements FlatMapFunction<T, Integer> {
-        long received = 0;
-        long logfreq = 50000;
-        long lastLog = -1;
-        long lastElements = 0;
-        private int elementSize;
-
-        public ThroughputLogger(int elementSize) {
-            this.elementSize = elementSize;
-        }
-
-        @Override
-        public void flatMap(T element, Collector<Integer> collector) throws Exception {
-            received++;
-            if (received % logfreq == 0) {
-                // throughput over entire time
-                long now = System.currentTimeMillis();
-
-                // throughput for the last "logfreq" elements
-                if(lastLog == -1) {
-                    // init (the first)
-                    lastLog = now;
-                    lastElements = received;
-                } else {
-                    long timeDiff = now - lastLog;
-                    long elementDiff = received - lastElements;
-                    double ex = (1000/(double)timeDiff);
-                    LOG.info("During the last {} ms, we received {} elements. That's {} elements/second/core. GB received {}",
-                            timeDiff, elementDiff, elementDiff*ex, (received * elementSize) / 1024 / 1024 / 1024);
-                    // reinit
-                    lastLog = now;
-                    lastElements = received;
-                }
-            }
-        }
-    }
 }

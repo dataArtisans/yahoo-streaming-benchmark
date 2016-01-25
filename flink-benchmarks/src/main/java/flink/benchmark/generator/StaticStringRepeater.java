@@ -1,6 +1,7 @@
 package flink.benchmark.generator;
 
 import flink.benchmark.AdvertisingTopologyFlinkWindows;
+import flink.benchmark.utils.ThroughputLogger;
 import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
@@ -24,7 +25,7 @@ public class StaticStringRepeater {
 		env.getConfig().setGlobalJobParameters(parameterTool);
 
 		DataStream<String> adImpressions = env.addSource(new StringRepeater(parameterTool));
-		adImpressions.flatMap(new AdvertisingTopologyFlinkWindows.ThroughputLogger<String>(240, 1_000_000));
+		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000));
 		adImpressions.addSink(new FlinkKafkaProducer<>(parameterTool.getRequired("kafka.topic"), new SimpleStringSchema(), parameterTool.getProperties(), new FixedPartitioner()));
 
 		env.execute("StaticStringRepeater" + parameterTool.toMap().toString());

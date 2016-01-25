@@ -132,7 +132,9 @@
               updated-file (clojure.java.io/writer "updated.txt")]
     (letfn [(data-printer [[seen updated]]
               (.write seen-file (str seen "\n"))
-              (.write updated-file (str updated "\n")))]
+              (.write updated-file (str updated "\n"))
+              (.flush seen-file)
+              (.flush updated-file))]
       (redis/with-server {:host redis-host}
         (doall
          (map data-printer
