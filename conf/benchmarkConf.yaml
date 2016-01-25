@@ -2,19 +2,22 @@
 # Licensed under the terms of the Apache License 2.0. Please see LICENSE file in the project root for terms.
 
 kafka.brokers:
-    - "localhost"
+    - "kakfa.twttr.net"
+kafka.port: 9092
+kafka.topic: "ads"
+kafka.partitions: 20
+kafka.zookeeper.path: /twitter/flink/kafka
+
+akka.zookeeper.path: /twitter/flink/akkaQuery
 
 zookeeper.servers:
-    - "localhost"
-
-kafka.port: 9092
+    - "zookeeper.twitter.com"
 zookeeper.port: 2181
-redis.host: "localhost"
-kafka.topic: "test8"
-kafka.partitions: 1
 
-process.hosts: 1
-process.cores: 4
+redis.host: "redis.twttr.net"
+
+process.hosts: 10
+process.cores: 12
 
 #STORM Specific
 storm.workers: 1
@@ -24,4 +27,13 @@ storm.ackers: 2
 spark.batchtime: 2000
 
 #Flink specific
-group.id: "someString"
+group.id: "flink_yahoo_benchmark"
+flink.checkpoint.interval: 1000
+add.result.sink: 1
+
+# The following is for when running the EventGenerator directly rather than reading from Kafka
+use.local.event.generator: 1
+redis.flush: 1
+redis.db: 0
+load.target.hz: 24000000
+
