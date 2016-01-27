@@ -56,11 +56,9 @@ public class HighKeyCardinalityGenerator {
       final int resetSize = sb.length();
       final int messagesPerTimeslice = loadPerTimeslice(loadTargetHz,
               getRuntimeContext().getNumberOfParallelSubtasks(), timesliceLengthMs);
-
-      int adsIdx = 0;
+      
       int eventsIdx = 0;
       
-
       while (running) {
         long emitStartTime = System.currentTimeMillis();
         for (int i = 0; i < messagesPerTimeslice; i++) {
