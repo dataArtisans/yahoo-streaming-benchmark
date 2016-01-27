@@ -22,6 +22,7 @@ process.cores: 12
 #STORM Specific
 storm.workers: 1
 storm.ackers: 2
+storm.highcard.redisthreads: 20
 
 #Spark Specific
 spark.batchtime: 2000

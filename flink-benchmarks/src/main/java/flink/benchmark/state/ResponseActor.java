@@ -46,7 +46,7 @@ public class ResponseActor<K extends Serializable, V extends Serializable> exten
 				V value = keyValueState.getValue(queryState.getTimestamp(), queryState.getKey());
 
 				if (value == null) {
-					sender().tell(new StateNotFound(queryState.getKey()), getSelf());
+					sender().tell(new StateNotFound<>(queryState.getKey()), getSelf());
 				} else {
 					sender().tell(new StateFound<>(queryState.getKey(), value), getSelf());
 				}
