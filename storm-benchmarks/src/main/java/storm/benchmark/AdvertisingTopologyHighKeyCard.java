@@ -4,6 +4,7 @@
  */
 package storm.benchmark;
 
+import benchmark.common.advertising.PooledRedisConnections;
 import org.apache.storm.Config;
 import org.apache.storm.LocalCluster;
 import org.apache.storm.StormSubmitter;
@@ -122,8 +123,8 @@ public class AdvertisingTopologyHighKeyCard {
         private final long windowSize;
         
         private transient OutputCollector _collector;
-        private transient ArrayBlockingQueue<Tuple2<String, String>> queue;
-        private transient ThreadWorker[] workers;
+        
+        private transient PooledRedisConnections redisConnections;
         
 
         public CampaignProcessorMultiThreaded(long windowSize, String redisServerHost, int numWorkerTheads) {
@@ -134,16 +135,7 @@ public class AdvertisingTopologyHighKeyCard {
 
         public void prepare(Map conf, TopologyContext context, OutputCollector collector) {
             _collector = collector;
-            queue = new ArrayBlockingQueue<>(numWorkerTheads);
-                    
-            workers = new ThreadWorker[numWorkerTheads];
-            for (int i = 0; i < numWorkerTheads; i++) {
-                Jedis jedis = new Jedis(redisServerHost);
-                jedis.select(1);
-                
-                workers[i] = new ThreadWorker(jedis, queue);
-                workers[i].start();
-            }
+            redisConnections = new PooledRedisConnections(redisServerHost, numWorkerTheads);
         }
 
         @Override
@@ -153,9 +145,9 @@ public class AdvertisingTopologyHighKeyCard {
                 final String event_time = tuple.getStringByField("event_time");
 
                 long timestamp = Long.parseLong(event_time);
-                long windowStart = timestamp - (timestamp % windowSize);
+                long windowTimestamp = timestamp - (timestamp % windowSize) + windowSize;
                 
-                queue.put(new Tuple2<>(campaign_id, String.valueOf(windowStart)));
+                redisConnections.add(campaign_id, String.valueOf(windowTimestamp));
                 _collector.ack(tuple);
             }
             catch (Exception e) {
@@ -165,62 +157,13 @@ public class AdvertisingTopologyHighKeyCard {
 
         @Override
         public void cleanup() {
-            if (workers != null) {
-                for (ThreadWorker t : workers) {
-                    if (t != null) {
-                        t.shutdown();
-                    }
-                }
+            if (redisConnections != null) {
+                redisConnections.shutdown ();
             }
         }
 
         @Override
         public void declareOutputFields(OutputFieldsDeclarer declarer) {}
-    }
-    
-    public static class ThreadWorker extends Thread {
-
-        private final Jedis jedis;
-        private final ArrayBlockingQueue<Tuple2<String, String>> queue;
-        
-        private volatile boolean running;
-        
-        public ThreadWorker(Jedis jedis, ArrayBlockingQueue<Tuple2<String, String>> queue) {
-            this.jedis = jedis;
-            this.queue = queue;
-            this.running = true;
-        }
-
-        @Override
-        public void run() {
-            while (running) {
-                try {
-                    Tuple2<String, String> next = queue.take();
-                    String campaign = next._1();
-                    String windowTimestamp = next._2();
-                    
-                    // we do not use hincr here, because this is not applicable for most types
-                    // of state and statistics
-                    String jedisEntry = jedis.hget(campaign, windowTimestamp);
-                    long count = (jedisEntry == null || jedisEntry.length() == 0) ? 1L : Long.parseLong(jedisEntry) + 1;
-                    jedis.hset(campaign, windowTimestamp, String.valueOf(count));
-                }
-                catch (InterruptedException ignored) {}
-                catch (Exception e) {
-                    // go on, it's just a benchmarks
-                    e.printStackTrace();
-                }
-            }
-            
-            jedis.shutdown();
-        }
-        
-        public void shutdown() {
-            this.running = false;
-            this.interrupt();
-        }
-        
-        
     }
 
     private static String joinHosts(List<String> hosts, String port) {

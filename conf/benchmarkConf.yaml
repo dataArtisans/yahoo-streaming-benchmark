@@ -31,7 +31,9 @@ spark.batchtime: 2000
 group.id: "flink_yahoo_benchmark"
 flink.checkpoint.interval: 60000
 add.result.sink: 1
-flink.highcard.checkpointURI: file:///tmp/checkpoints
+flink.highcard.checkpointURI: "file:///tmp/checkpoints"
+flink.highcard.redisthreads: 20
+
 
 # The following is for when running the EventGenerator directly rather than reading from Kafka
 use.local.event.generator: 1
