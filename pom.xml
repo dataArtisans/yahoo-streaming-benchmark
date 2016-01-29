@@ -62,7 +62,7 @@ Licensed under the terms of the Apache License 2.0. Please see LICENSE file in t
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
-                <artifactId>flink-connector-kafka_2.11</artifactId>
+                <artifactId>flink-connector-kafka-0.8_2.11</artifactId>
                 <version>${flink.version}</version>
             </dependency>
             <dependency>

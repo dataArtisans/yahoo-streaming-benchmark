@@ -17,27 +17,20 @@ import org.apache.storm.topology.base.BaseRichBolt;
 import org.apache.storm.tuple.Fields;
 import org.apache.storm.tuple.Tuple;
 import org.apache.storm.tuple.Values;
-//import backtype.storm.utils.Utils;
 import benchmark.common.Utils;
-import benchmark.common.advertising.CampaignProcessorCommon;
-import benchmark.common.advertising.RedisAdCampaignCache;
 import java.util.Map;
 import java.util.UUID;
 import java.util.List;
-import java.util.concurrent.ArrayBlockingQueue;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Options;
-import org.apache.log4j.Logger;
 import org.json.JSONObject;
-import redis.clients.jedis.Jedis;
 import org.apache.storm.kafka.KafkaSpout;
 import org.apache.storm.kafka.SpoutConfig;
 import org.apache.storm.kafka.StringScheme;
 import org.apache.storm.kafka.ZkHosts;
-import scala.Tuple2;
 
 /**
  * This is a basic example of a Storm topology.
@@ -119,13 +112,13 @@ public class AdvertisingTopologyHighKeyCard {
 
         private final String redisServerHost;
         private final int numWorkerTheads;
-        
+
         private final long windowSize;
-        
+
         private transient OutputCollector _collector;
-        
+
         private transient PooledRedisConnections redisConnections;
-        
+
 
         public CampaignProcessorMultiThreaded(long windowSize, String redisServerHost, int numWorkerTheads) {
             this.windowSize = windowSize;
@@ -146,7 +139,7 @@ public class AdvertisingTopologyHighKeyCard {
 
                 long timestamp = Long.parseLong(event_time);
                 long windowTimestamp = timestamp - (timestamp % windowSize) + windowSize;
-                
+
                 redisConnections.add(campaign_id, String.valueOf(windowTimestamp));
                 _collector.ack(tuple);
             }
@@ -203,12 +196,12 @@ public class AdvertisingTopologyHighKeyCard {
         int ackers = ((Number)commonConfig.get("storm.ackers")).intValue();
         int cores = ((Number)commonConfig.get("process.cores")).intValue();
         int parallel = Math.max(1, cores/5);
-        
+
         long windowSize = 60 * 60 * 1000; // 60 minutes
         int numRedisThreads = ((Number)commonConfig.get("storm.highcard.redisthreads")).intValue();
 
         ZkHosts hosts = new ZkHosts(zkServerHosts, zkPath + "/brokers");
-        
+
 //        GlobalPartitionInformation gpi = new GlobalPartitionInformation();
 //        gpi.addPartition(0, new Broker("localhost", 9092));
 //        BrokerHosts hosts = new StaticHosts(gpi);
@@ -239,7 +232,7 @@ public class AdvertisingTopologyHighKeyCard {
 
             LocalCluster cluster = new LocalCluster();
             cluster.submitTopology("test", conf, builder.createTopology());
-            backtype.storm.utils.Utils.sleep(10000000);
+            org.apache.storm.utils.Utils.sleep(10000000);
             cluster.killTopology("test");
             cluster.shutdown();
         }

@@ -4,14 +4,12 @@
  */
 package flink.benchmark.state;
 
-import benchmark.common.advertising.RedisAdCampaignCache;
-import flink.benchmark.generator.EventGenerator;
+import flink.benchmark.generator.HighKeyCardinalityGenerator;
 import flink.benchmark.utils.ThroughputLogger;
 import flink.benchmark.utils.Utils;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.FilterFunction;
-import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -29,11 +27,8 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AscendingTimestampExtractor;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer08;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
 
@@ -99,9 +94,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
     RichParallelSourceFunction<String> source;
     String sourceName;
     if (parameters.has("use.local.event.generator")) {
-      EventGenerator eventGenerator = new EventGenerator(parameters);
-      eventGenerator.prepareRedis();
-      eventGenerator.writeCampaignFile();
+      HighKeyCardinalityGenerator eventGenerator = new HighKeyCardinalityGenerator(parameters);
       source = eventGenerator.createSource();
       sourceName = "EventGenerator";
     } else {
