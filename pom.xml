@@ -19,8 +19,8 @@ Licensed under the terms of the Apache License 2.0. Please see LICENSE file in t
         <kafka.version>0.8.2.1</kafka.version>
         <flink.version>1.0-SNAPSHOT</flink.version>
         <storm.version>2.0.0-SNAPSHOT</storm.version>
-        <scala.binary.version>2.11</scala.binary.version>
-        <scala.version>2.11.7</scala.version>
+        <scala.binary.version>2.10</scala.binary.version>
+        <scala.version>2.10.4</scala.version>
         <json.version>20141113</json.version>
         <jedis.version>2.4.2</jedis.version>
         <sedis.version>1.2.2</sedis.version>
@@ -57,12 +57,12 @@ Licensed under the terms of the Apache License 2.0. Please see LICENSE file in t
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
-                <artifactId>flink-streaming-java_2.11</artifactId>
+                <artifactId>flink-streaming-java_${scala.binary.version}</artifactId>
                 <version>${flink.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.flink</groupId>
-                <artifactId>flink-connector-kafka-0.8_2.11</artifactId>
+                <artifactId>flink-connector-kafka-0.8_${scala.binary.version}</artifactId>
                 <version>${flink.version}</version>
             </dependency>
             <dependency>
