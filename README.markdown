@@ -42,5 +42,5 @@ We've continued to use the benchmarkConf.yaml for all configuration.  You'll nee
 For most of these benchmarks the results are collected using Yahoo's original scripts.  See that benchmark for more details.  In the case of the -FlinkState programs use the AkkaStateQuery program to retrieve the results.
 
 ### Other notes
-This code was built and tested against Flink 1.0-SNAPSHOT (8fc7e7) and Storm 2.0.0-SNAPSHOT (a8d253).
+This code was built and tested against Flink 1.0-SNAPSHOT (master on Jan 27, 2016) and Storm 2.0.0-SNAPSHOT (SHA a8d253). 
 
