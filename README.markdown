@@ -1,40 +1,42 @@
-<!--
- Copyright 2015, Yahoo Inc.
- Licensed under the terms of the Apache License 2.0. Please see LICENSE file in the project root for terms.
--->
-# Yahoo Streaming Benchmarks 
 
-Code licensed under the Apache 2.0 license. See LICENSE file for terms.
+# Extending the Yahoo! Streaming Benchmarks 
+
 
 ### Background
-At Yahoo we have adopted [Apache Storm](https://storm.apache.org) as our stream processing platform of choice.  But that was in 2012 and the landscape has changed significantly singe then. Because of this we really want to know what Storm is good at, where it needs to be improved compared to other systems, and what its limitations are compared to other tools so we can recommend the best tool for the job to our customers.  To do this we started to look for stream processing benchmarks that we could use to do this evaluation, but all of them ended up lacking in several fundamental areas.  Primarily they did not test anything close to a read world use case, so we decided to write a simple one.  This is the first round of these tests.  The tool here is not polished and only covers three tools and one specific use case.  We hope to expand this in the future in terms of the tools tested, the variety of processing tested, and the metrics gathered.
+This code is a fork of the original [Yahoo! Streaming benchmark code](https://github.com/yahoo/streaming-benchmarks).
 
-### Setup
-We provide a script stream-bench.sh to setup and run the tests on a single node, and to act as an example of what to do when running the tests on a multi-node system.
+We have added to this the following additional benchmarking programs. They are all variations of the original Yahoo! benchmarks.
 
-It takes a list of operations to perform, and options are passed into the script through environment variables. The most significant of these are
+For additional background please read ["Extending the Yahoo! Streaming Benchmark"](http://data-artisans.com/extending-the-yahoo-streaming-benchmark/) and ["Benchmarking Streaming Computation Engines at Yahoo!"](http://yahooeng.tumblr.com/post/135321837876/benchmarking-streaming-computation-engines-at)
 
-#### Operations
-   * SETUP - download dependencies (Storm, Spark, Flink, Redis, and Kafka) cleans out any temp files and compiles everything
-   * STORM_TEST - Run the test using Storm on a single node
-   * SPARK_TEST - Run the test using Spark on a single node
-   * FLINK_TEST - Run the test using Flink on a single node
-   * STOP_ALL - If something goes wrong stop all processes that were launched for the test.
 
-#### Environment Variables
-   * STORM_VERSION - the version of Storm to compile and run against (default 0.10.0)
-   * SPARK_VERSION - the version of Spark to compile and run against (default 1.5.1)
-   * FLINK_VERSION - the version of Flink to compile and run against (default 0.10.1)
-   * LOAD - the number of messages per second to send to be processed (default 1000)
-   * TEST_TIME - the number of seconds to run the test for (default 240)
-   * LEIN - the location of the lein executable (default lein)
+#### flink.benchmark.AdvertisingTopologyFlinkWindows
+This Flink program does the same operation in Flink as in the original benchmarks but uses Flink's native windowing and trigger support to accomplish the same things.  It computes 10 seconds windows, emitting them to Redis when they're complete and also emits early updates every second.
 
-### The Test
-The initial test is a simple advertising use case.
+#### flink.benchmark.AdvertisingTopologyRedisDirect
+This Flink program builds 60 minute windows directly in Redis.  It's purpose is to illustrate the key-value store as the bottleneck when you don't have fault-tolerant state in the streaming system.  Flink provides alternatives to this approach.  The window time is configurable.
 
-Ad events arrive through kafka in a JSON format.  They are parsed to a more usable format, filtered for the ad view events that this processing cares about, the unneeded fields are removed, and then new fields are added by joining the event with campaign data stored in Redis.  Finally the ad views are aggregated by campaign and by time window and stored back into redis, along with a timestamp to indicate when they are updated.
+#### flink.benchmark.state.AdvertisingTopologyFlinkState
+This Flink program is an example of using the Flink nodes themselves as the key-value store to eliminate a remote store as the limit to throughput.  By default it computes 60 minute windows but this is configurable.
 
+#### flink.benchmark.state.AdvertisingTopologyFlinkStateHighKeyCard
+This is the same as above but in addition it is designed for a very high key cardinality.
+
+#### flink.benchmark.state.AkkaStateQuery
+This program is used to query the key-value state directly in the Flink nodes.  This in combination with either of the two -FlinkState programs above is what allows you to eliminate the key-value store altogether.
+
+#### storm.benchmark.AdvertisingTopologyHighKeyCard
+This Storm program is derivative of Yahoo's original AdvertisingTopology code.  The difference is that it is designed for very high #'s of campaigns and builds the output windows by directly updating them in Redis.  This benchmark represents any computation where it's neccessary to build state outside of the streaming system such that it's fault tolerant.  Many applications in production work exactly this way and typically their throughput is limited by the remote key-value store.  The windows in this case are set to 60 minutes by default but this is configurable.
+
+#### flink.benchmark.genertor.AdImpressionGenerator
+A data generator for Flink compatible with the original Yahoo data generator.  This generator runs via Flink and writes data to Kafka.  It can also be embedded directly in your Flink program as a source if Kafka becomes a bottleneck.  This is the generator we used in the benchmarks as it was difficult to get the Clojure based generator to run at a high enough throughput for our experiments.
+
+#### flink.benchmark.generator.AdImpressionsGeneratorHighKeyCardinality
+Same as the generator described above but updated to generate a much higher number of ad campaigns.  The number of ad campaigns is configurable.
+
+
+### Configuration
+We've continued to use the benchmarkConf.yaml for all configuration.  You'll need to edit this file for your environment and also to control various parameters both for the load generators and the benchmarking programs.
 
 ### Results
-The current set of results that we care about are comparing the latency that a particular processing system can produce at a given input load.
-The result of running a test creates a few files data/seen.txt and data/updated.txt  data/seen.txt contains the counts of events for different campaigns and time windows.  data/updated.txt is the latency in ms from when the last event was emitted to kafka for that particular campaign window and when it was written into Redis.
+For most of these benchmarks the results are collected using Yahoo's original scripts.  See that benchmark for more details.  In the case of the -FlinkState programs use the AkkaStateQuery program to retrieve the results.
