@@ -58,14 +58,7 @@ public class AdvertisingTopologyNative {
         }
         // set default parallelism for all operators (recommended value: number of available worker CPU cores in the cluster (hosts * cores))
 
-        Properties kProps = flinkBenchmarkParams.getProperties();
-    //    kProps.setProperty("auto.offset.reset", "earliest");
-        kProps.setProperty("group.id", "earlasdiest"+UUID.randomUUID());
-        DataStream<String> messageStream = env
-                .addSource(new FlinkKafkaConsumer082<>(
-                        flinkBenchmarkParams.getRequired("topic"),
-                        new SimpleStringSchema(),
-                        kProps));
+        DataStream<String> messageStream = env.addSource(kafkaSource(flinkBenchmarkParams));
 
         messageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
 
@@ -89,6 +82,18 @@ public class AdvertisingTopologyNative {
 
 
         env.execute();
+    }
+
+    private static FlinkKafkaConsumer082<String> kafkaSource(ParameterTool flinkBenchmarkParams) {
+
+        Properties kProps = flinkBenchmarkParams.getProperties();
+        //    kProps.setProperty("auto.offset.reset", "earliest");
+        kProps.setProperty("group.id", "earlasdiest"+UUID.randomUUID());
+
+        return new FlinkKafkaConsumer082<>(
+                flinkBenchmarkParams.getRequired("topic"),
+                new SimpleStringSchema(),
+                kProps);
     }
 
     public static class DeserializeBolt implements

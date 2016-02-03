@@ -84,6 +84,7 @@ public class AdvertisingTopologyFlinkWindows {
     // use event time
     env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
+    // Choose a source -- Either local generator or Kafka
     RichParallelSourceFunction<String> source;
     String sourceName;
     if(parameters.has("use.local.event.generator")){
@@ -98,6 +99,7 @@ public class AdvertisingTopologyFlinkWindows {
       sourceName = "Kafka";
     }
 
+    // Define the DataStream program
     DataStream<String> rawMessageStream = env.addSource(source, sourceName);
 
     // log performance
@@ -131,24 +133,7 @@ public class AdvertisingTopologyFlinkWindows {
     // set a custom trigger
     windowStream.trigger(new EventAndProcessingTimeTrigger());
 
-    result = windowStream.apply(new ReduceFunction<Tuple3<String, String, Long>>() {
-      @Override
-      public Tuple3<String, String, Long> reduce(Tuple3<String, String, Long> t0, Tuple3<String, String, Long> t1) throws Exception {
-        t0.f2 += t1.f2;
-        return t0;
-      }
-    }, new WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>() {
-      @Override
-      public void apply(Tuple keyTuple, TimeWindow window, Iterable<Tuple3<String, String, Long>> values, Collector<Tuple3<String, String, Long>> out) throws Exception {
-        Iterator<Tuple3<String, String, Long>> valIter = values.iterator();
-        Tuple3<String, String, Long> tuple = valIter.next();
-        if (valIter.hasNext()) {
-          throw new IllegalStateException("Unexpected");
-        }
-        tuple.f1 = Long.toString(window.getEnd());
-        out.collect(tuple); // collect end time here
-      }
-    });
+    result = windowStream.apply(sumReduceFunction(), sumWindowFunction());
 
     // write result to redis
     if (parameters.has("add.result.sink")) {
@@ -159,6 +144,31 @@ public class AdvertisingTopologyFlinkWindows {
     }
 
     env.execute("AdvertisingTopologyFlinkWindows " + parameters.toMap().toString());
+  }
+
+  private static ReduceFunction<Tuple3<String, String, Long>> sumReduceFunction() {
+    return new ReduceFunction<Tuple3<String, String, Long>>() {
+      @Override
+      public Tuple3<String, String, Long> reduce(Tuple3<String, String, Long> t0, Tuple3<String, String, Long> t1) throws Exception {
+        t0.f2 += t1.f2;
+        return t0;
+      }
+    };
+  }
+
+  private static WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow> sumWindowFunction() {
+    return new WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>() {
+      @Override
+      public void apply(Tuple keyTuple, TimeWindow window, Iterable<Tuple3<String, String, Long>> values, Collector<Tuple3<String, String, Long>> out) throws Exception {
+        Iterator<Tuple3<String, String, Long>> valIter = values.iterator();
+        Tuple3<String, String, Long> tuple = valIter.next();
+        if (valIter.hasNext()) {
+          throw new IllegalStateException("Unexpected");
+        }
+        tuple.f1 = Long.toString(window.getEnd());
+        out.collect(tuple); // collect end time here
+      }
+    };
   }
 
   private static FlinkKafkaConsumer082<String> kafkaSource(ParameterTool parameters) {
