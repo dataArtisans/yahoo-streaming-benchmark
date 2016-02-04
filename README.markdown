@@ -1,5 +1,5 @@
 
-# Extending the Yahoo! Streaming Benchmarks 
+# Extending the Yahoo Streaming Benchmarks 
 
 
 ### Background
