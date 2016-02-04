@@ -5,9 +5,9 @@
 package flink.benchmark;
 
 import benchmark.common.advertising.RedisAdCampaignCache;
-import flink.benchmark.generator.EventGenerator;
+import flink.benchmark.generator.EventGeneratorSource;
+import flink.benchmark.generator.RedisHelper;
 import flink.benchmark.utils.ThroughputLogger;
-import flink.benchmark.utils.Utils;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.*;
@@ -16,7 +16,6 @@ import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.tuple.Tuple7;
-import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
@@ -34,118 +33,107 @@ import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
 import redis.clients.jedis.Jedis;
 
-import java.io.FileInputStream;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 /**
- * To Run:  flink run target/flink-benchmarks-0.1.0-AdvertisingTopologyNative.jar  --confPath "../conf/benchmarkConf.yaml"
+ * To Run:  flink run -c flink.benchmark.AdvertisingTopologyFlinkWindows target/flink-benchmarks-0.1.0.jar "../conf/benchmarkConf.yaml"
+ *
+ * This job variant uses Flinks built-in windowing and triggering support to compute the windows
+ * and trigger when each window is complete as well as once per second.
  */
 public class AdvertisingTopologyFlinkWindows {
 
   private static final Logger LOG = LoggerFactory.getLogger(AdvertisingTopologyFlinkWindows.class);
 
-
   public static void main(final String[] args) throws Exception {
 
-    // load yaml file
-    Yaml yml = new Yaml(new SafeConstructor());
-    Map<String, String> ymlMap = (Map) yml.load(new FileInputStream(args[0]));
-    String kafkaZookeeperConnect = Utils.getZookeeperServers(ymlMap, String.valueOf(ymlMap.get("kafka.zookeeper.path")));
-    ymlMap.put("zookeeper.connect", kafkaZookeeperConnect); // set ZK connect for Kafka
-    ymlMap.put("bootstrap.servers", Utils.getKafkaBrokers(ymlMap));
-    for (Map.Entry e : ymlMap.entrySet()) {
-      {
-        e.setValue(e.getValue().toString());
-      }
-    }
+    BenchmarkConfig config = BenchmarkConfig.fromArgs(args);
 
-    ParameterTool parameters = ParameterTool.fromMap(ymlMap);
+    StreamExecutionEnvironment env = setupEnvironment(config);
 
-    long windowSize = parameters.getLong("window.size", 10_000);
-    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-    env.getConfig().setGlobalJobParameters(parameters);
-
-    // Set the buffer timeout (default 100)
-    // Lowering the timeout will lead to lower latencies, but will eventually reduce throughput.
-    env.setBufferTimeout(parameters.getLong("flink.buffer.timeout", 100));
-
-    if (parameters.has("flink.checkpoint.interval")) {
-      // enable checkpointing for fault tolerance
-      env.enableCheckpointing(parameters.getLong("flink.checkpoint.interval", 1000));
-    }
-
-    // use event time
-    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
-
-    // Choose a source -- Either local generator or Kafka
-    RichParallelSourceFunction<String> source;
-    String sourceName;
-    if(parameters.has("use.local.event.generator")){
-      EventGenerator eventGenerator = new EventGenerator(parameters);
-      eventGenerator.prepareRedis();
-      eventGenerator.writeCampaignFile();
-      source = eventGenerator.createSource();
-      sourceName = "EventGenerator";
-    }
-    else{
-      source = kafkaSource(parameters);
-      sourceName = "Kafka";
-    }
-
-    // Define the DataStream program
-    DataStream<String> rawMessageStream = env.addSource(source, sourceName);
+    DataStream<String> rawMessageStream = streamSource(config, env);
 
     // log performance
     rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
 
     DataStream<Tuple2<String, String>> joinedAdImpressions = rawMessageStream
-      // Parse the String as JSON
       .flatMap(new DeserializeBolt())
-
-        //Filter the records if event type is "view"
       .filter(new EventFilterBolt())
-
-        // project the event
       .<Tuple2<String, String>>project(2, 5) //ad_id, event_time
+      .flatMap(new RedisJoinBolt(config)) // campaign_id, event_time
+      .assignTimestamps(new AdTimestampExtractor()); // extract timestamps and generate watermarks from event_time
 
-        // perform join with redis data
-      .flatMap(new RedisJoinBolt()) // campaign_id, event_time
-
-        // extract timestamps and generate watermarks from event_time
-      .assignTimestamps(new AdTimestampExtractor());
-
-    // campaign_id, window end time, count
-    DataStream<Tuple3<String, String, Long>> result = null;
-
-
-    WindowedStream<Tuple3<String, String, Long>, Tuple, TimeWindow> windowStream = joinedAdImpressions.map(new MapToImpressionCount())
-      // process campaign
+    WindowedStream<Tuple3<String, String, Long>, Tuple, TimeWindow> windowStream = joinedAdImpressions
+      .map(new MapToImpressionCount())
       .keyBy(0) // campaign_id
-      .timeWindow(Time.of(windowSize, TimeUnit.MILLISECONDS));
+      .timeWindow(Time.of(config.windowSize, TimeUnit.MILLISECONDS));
 
     // set a custom trigger
     windowStream.trigger(new EventAndProcessingTimeTrigger());
 
-    result = windowStream.apply(sumReduceFunction(), sumWindowFunction());
+    // campaign_id, window end time, count
+    DataStream<Tuple3<String, String, Long>> result =
+      windowStream.apply(sumReduceFunction(), sumWindowFunction());
 
     // write result to redis
-    if (parameters.has("add.result.sink")) {
-      result.addSink(new RedisResultSink());
-    }
-    if (parameters.has("add.result.sink.optimized")) {
-      result.addSink(new RedisResultSinkOptimized());
+    if (config.getParameters().has("add.result.sink.optimized")) {
+      result.addSink(new RedisResultSinkOptimized(config));
+    } else {
+      result.addSink(new RedisResultSink(config));
     }
 
-    env.execute("AdvertisingTopologyFlinkWindows " + parameters.toMap().toString());
+    env.execute("AdvertisingTopologyFlinkWindows " + config.parameters.toMap().toString());
   }
 
+  /**
+   * Choose source - either Kafka or data generator
+   */
+  private static DataStream<String> streamSource(BenchmarkConfig config, StreamExecutionEnvironment env) {
+    // Choose a source -- Either local generator or Kafka
+    RichParallelSourceFunction<String> source;
+    String sourceName;
+    if (config.useLocalEventGenerator) {
+      EventGeneratorSource eventGenerator = new EventGeneratorSource(config);
+      source = eventGenerator;
+      sourceName = "EventGenerator";
+
+      Map<String, List<String>> campaigns = eventGenerator.getCampaigns();
+      RedisHelper redisHelper = new RedisHelper(config);
+      redisHelper.prepareRedis(campaigns);
+      redisHelper.writeCampaignFile(campaigns);
+    } else {
+      source = kafkaSource(config);
+      sourceName = "Kafka";
+    }
+
+    return env.addSource(source, sourceName);
+  }
+
+  /**
+   * Setup Flink environment
+   */
+  private static StreamExecutionEnvironment setupEnvironment(BenchmarkConfig config) {
+    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+    env.getConfig().setGlobalJobParameters(config.getParameters());
+
+    if (config.checkpointsEnabled) {
+      env.enableCheckpointing(config.checkpointInterval);
+    }
+
+    // use event time
+    env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+    return env;
+  }
+
+  /**
+   * Sum - window reduce function
+   */
   private static ReduceFunction<Tuple3<String, String, Long>> sumReduceFunction() {
     return new ReduceFunction<Tuple3<String, String, Long>>() {
       @Override
@@ -156,6 +144,9 @@ public class AdvertisingTopologyFlinkWindows {
     };
   }
 
+  /**
+   * Sum - Window function, summing already happened in reduce function
+   */
   private static WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow> sumWindowFunction() {
     return new WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>() {
       @Override
@@ -171,14 +162,20 @@ public class AdvertisingTopologyFlinkWindows {
     };
   }
 
-  private static FlinkKafkaConsumer082<String> kafkaSource(ParameterTool parameters) {
-    return new FlinkKafkaConsumer082<String>(
-      parameters.getRequired("kafka.topic"),
+  /**
+   * Configure Kafka source
+   */
+  private static FlinkKafkaConsumer082<String> kafkaSource(BenchmarkConfig config) {
+    return new FlinkKafkaConsumer082<>(
+      config.kafkaTopic,
       new SimpleStringSchema(),
-      parameters.getProperties());
+      config.getParameters().getProperties());
   }
 
-  public static class EventAndProcessingTimeTrigger implements Trigger<Object, TimeWindow> {
+  /**
+   * Custom trigger - Fire and purge window when window closes, also fire every 1000 ms.
+   */
+  private static class EventAndProcessingTimeTrigger implements Trigger<Object, TimeWindow> {
 
     @Override
     public TriggerResult onElement(Object element, long timestamp, TimeWindow window, TriggerContext ctx) throws Exception {
@@ -205,7 +202,10 @@ public class AdvertisingTopologyFlinkWindows {
     }
   }
 
-  public static class DeserializeBolt implements
+  /**
+   * Parse JSON
+   */
+  private static class DeserializeBolt implements
     FlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
 
     transient JSONParser parser = null;
@@ -219,7 +219,7 @@ public class AdvertisingTopologyFlinkWindows {
       JSONObject obj = (JSONObject) parser.parse(input);
 
       Tuple7<String, String, String, String, String, String, String> tuple =
-        new Tuple7<String, String, String, String, String, String, String>(
+        new Tuple7<>(
           obj.getAsString("user_id"),
           obj.getAsString("page_id"),
           obj.getAsString("ad_id"),
@@ -231,6 +231,9 @@ public class AdvertisingTopologyFlinkWindows {
     }
   }
 
+  /**
+   * Filter out all but "view" events
+   */
   public static class EventFilterBolt implements
     FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
     @Override
@@ -239,38 +242,44 @@ public class AdvertisingTopologyFlinkWindows {
     }
   }
 
-  public static final class RedisJoinBolt extends RichFlatMapFunction<Tuple2<String, String>, Tuple2<String, String>> {
+  /**
+   * Map ad ids to campaigns using cached data from Redis
+   */
+  private static final class RedisJoinBolt extends RichFlatMapFunction<Tuple2<String, String>, Tuple2<String, String>> {
 
-    RedisAdCampaignCache redisAdCampaignCache;
+    private RedisAdCampaignCache redisAdCampaignCache;
+    private BenchmarkConfig config;
+
+    public RedisJoinBolt(BenchmarkConfig config) {
+      this.config = config;
+    }
 
     @Override
     public void open(Configuration parameters) {
       //initialize jedis
-      ParameterTool parameterTool = (ParameterTool) getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
-      String redis_host = parameterTool.getRequired("redis.host");
+      String redis_host = config.redisHost;
       LOG.info("Opening connection with Jedis to {}", redis_host);
       this.redisAdCampaignCache = new RedisAdCampaignCache(redis_host);
       this.redisAdCampaignCache.prepare();
     }
 
     @Override
-    public void flatMap(Tuple2<String, String> input,
-      Collector<Tuple2<String, String>> out) throws Exception {
+    public void flatMap(Tuple2<String, String> input, Collector<Tuple2<String, String>> out) throws Exception {
       String ad_id = input.getField(0);
       String campaign_id = this.redisAdCampaignCache.execute(ad_id);
       if (campaign_id == null) {
         return;
       }
 
-      Tuple2<String, String> tuple = new Tuple2<String, String>(
-        campaign_id,
-        (String) input.getField(1)); // event_time
+      Tuple2<String, String> tuple = new Tuple2<>(campaign_id, (String) input.getField(1)); // event_time
       out.collect(tuple);
-      // LOG.info("Joined to {}", tuple);
     }
   }
 
 
+  /**
+   * Generate timestamp and watermarks for data stream
+   */
   private static class AdTimestampExtractor implements TimestampExtractor<Tuple2<String, String>> {
 
     long maxTimestampSeen = 0;
@@ -294,23 +303,32 @@ public class AdvertisingTopologyFlinkWindows {
     }
   }
 
+  /**
+   *
+   */
   private static class MapToImpressionCount implements MapFunction<Tuple2<String, String>, Tuple3<String, String, Long>> {
     @Override
     public Tuple3<String, String, Long> map(Tuple2<String, String> t3) throws Exception {
-      return new Tuple3<String, String, Long>(t3.f0, t3.f1, 1L);
+      return new Tuple3<>(t3.f0, t3.f1, 1L);
     }
   }
 
+  /**
+   * Sink computed windows to Redis
+   */
   private static class RedisResultSink extends RichSinkFunction<Tuple3<String, String, Long>> {
     private Jedis flushJedis;
+
+    private BenchmarkConfig config;
+
+    public RedisResultSink(BenchmarkConfig config) {
+      this.config = config;
+    }
 
     @Override
     public void open(Configuration parameters) throws Exception {
       super.open(parameters);
-      ParameterTool pt = (ParameterTool) getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
-
-      flushJedis = new Jedis(pt.getRequired("redis.host"));
-      // flushJedis.select(1); // select db 1
+      flushJedis = new Jedis(config.redisHost);
     }
 
     @Override
@@ -320,22 +338,30 @@ public class AdvertisingTopologyFlinkWindows {
 
       String campaign = result.f0;
       String timestamp = result.f1;
-      String windowUUID = flushJedis.hmget(campaign, timestamp).get(0);
-      if (windowUUID == null) {
-        windowUUID = UUID.randomUUID().toString();
-        flushJedis.hset(campaign, timestamp, windowUUID);
-
-        String windowListUUID = flushJedis.hmget(campaign, "windows").get(0);
-        if (windowListUUID == null) {
-          windowListUUID = UUID.randomUUID().toString();
-          flushJedis.hset(campaign, "windows", windowListUUID);
-        }
-        flushJedis.lpush(windowListUUID, timestamp);
-      }
+      String windowUUID = getOrCreateWindow(campaign, timestamp);
 
       flushJedis.hset(windowUUID, "seen_count", Long.toString(result.f2));
       flushJedis.hset(windowUUID, "time_updated", Long.toString(System.currentTimeMillis()));
       flushJedis.lpush("time_updated", Long.toString(System.currentTimeMillis()));
+    }
+
+    private String getOrCreateWindow(String campaign, String timestamp) {
+      String windowUUID = flushJedis.hmget(campaign, timestamp).get(0);
+      if (windowUUID == null) {
+        windowUUID = UUID.randomUUID().toString();
+        flushJedis.hset(campaign, timestamp, windowUUID);
+        getOrCreateWindowList(campaign, timestamp);
+      }
+      return windowUUID;
+    }
+
+    private void getOrCreateWindowList(String campaign, String timestamp) {
+      String windowListUUID = flushJedis.hmget(campaign, "windows").get(0);
+      if (windowListUUID == null) {
+        windowListUUID = UUID.randomUUID().toString();
+        flushJedis.hset(campaign, "windows", windowListUUID);
+      }
+      flushJedis.lpush(windowListUUID, timestamp);
     }
 
     @Override
@@ -345,15 +371,21 @@ public class AdvertisingTopologyFlinkWindows {
     }
   }
 
+  /**
+   * Simplified version of Redis data structure
+   */
   private static class RedisResultSinkOptimized extends RichSinkFunction<Tuple3<String, String, Long>> {
+    private final BenchmarkConfig config;
     private Jedis flushJedis;
+
+    public RedisResultSinkOptimized(BenchmarkConfig config){
+      this.config = config;
+    }
 
     @Override
     public void open(Configuration parameters) throws Exception {
       super.open(parameters);
-      ParameterTool pt = (ParameterTool) getRuntimeContext().getExecutionConfig().getGlobalJobParameters();
-
-      flushJedis = new Jedis(pt.getRequired("redis.host"));
+      flushJedis = new Jedis(config.redisHost);
       flushJedis.select(1); // select db 1
     }
 
