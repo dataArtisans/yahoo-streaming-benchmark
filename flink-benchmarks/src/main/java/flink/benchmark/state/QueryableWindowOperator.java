@@ -27,8 +27,8 @@ import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.memory.DataInputView;
 import org.apache.flink.runtime.akka.AkkaUtils;
+import org.apache.flink.runtime.state.AbstractStateBackend;
 import org.apache.flink.runtime.state.AsynchronousStateHandle;
-import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.runtime.state.StateHandle;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
@@ -44,7 +44,6 @@ import scala.concurrent.duration.FiniteDuration;
 import java.io.Serializable;
 import java.net.UnknownHostException;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
@@ -335,13 +334,13 @@ public class QueryableWindowOperator
     private final long checkpointId;
     private final long timestamp;
     private Map<String, Map<Long, CountAndAccessTime>> stateSnapshot;
-    private StateBackend<?> backend;
+    private AbstractStateBackend backend;
     private long size = 0;
 
     public DataInputViewAsynchronousStateHandle(long checkpointId,
                                                 long timestamp,
                                                 Map<String, Map<Long, CountAndAccessTime>> stateSnapshot,
-                                                StateBackend<?> backend) {
+                                                AbstractStateBackend backend) {
       this.checkpointId = checkpointId;
       this.timestamp = timestamp;
       this.stateSnapshot = stateSnapshot;
@@ -350,7 +349,7 @@ public class QueryableWindowOperator
 
     @Override
     public StateHandle<DataInputView> materialize() throws Exception {
-      StateBackend.CheckpointStateOutputView out = backend.createCheckpointStateOutputView(
+      AbstractStateBackend.CheckpointStateOutputView out = backend.createCheckpointStateOutputView(
         checkpointId,
         timestamp);
 

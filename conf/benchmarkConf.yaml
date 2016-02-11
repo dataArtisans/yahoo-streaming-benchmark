@@ -36,7 +36,7 @@ redis.threads: 20
 
 
 # The following is for when running the EventGenerator directly rather than reading from Kafka
-use.local.event.generator: 1
+#use.local.event.generator: 1
 redis.flush: 1
 redis.db: 0
 load.target.hz: 10000000

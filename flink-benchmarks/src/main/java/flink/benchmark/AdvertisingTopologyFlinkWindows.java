@@ -11,7 +11,7 @@ import flink.benchmark.utils.ThroughputLogger;
 import net.minidev.json.JSONObject;
 import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.*;
-import org.apache.flink.api.common.state.OperatorState;
+import org.apache.flink.api.common.state.ValueState;
 import org.apache.flink.api.java.tuple.Tuple;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
@@ -27,15 +27,15 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.triggers.Trigger;
+import org.apache.flink.streaming.api.windowing.triggers.TriggerResult;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer09;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
 
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -60,7 +60,7 @@ public class AdvertisingTopologyFlinkWindows {
     DataStream<String> rawMessageStream = streamSource(config, env);
 
     // log performance
-    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 10_000));
 
     DataStream<Tuple2<String, String>> joinedAdImpressions = rawMessageStream
       .flatMap(new DeserializeBolt())
@@ -150,14 +150,12 @@ public class AdvertisingTopologyFlinkWindows {
   private static WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow> sumWindowFunction() {
     return new WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>() {
       @Override
-      public void apply(Tuple keyTuple, TimeWindow window, Iterable<Tuple3<String, String, Long>> values, Collector<Tuple3<String, String, Long>> out) throws Exception {
-        Iterator<Tuple3<String, String, Long>> valIter = values.iterator();
-        Tuple3<String, String, Long> tuple = valIter.next();
-        if (valIter.hasNext()) {
-          throw new IllegalStateException("Unexpected");
+      public void apply(Tuple keyTuple, TimeWindow window, Tuple3<String, String, Long> tuple, Collector<Tuple3<String, String, Long>> out) throws Exception {
+        if(tuple != null) {
+          // TODO : I'm not sure why this is null sometimes
+          tuple.f1 = Long.toString(window.getEnd());
+          out.collect(tuple); // collect end time here
         }
-        tuple.f1 = Long.toString(window.getEnd());
-        out.collect(tuple); // collect end time here
       }
     };
   }
@@ -165,8 +163,8 @@ public class AdvertisingTopologyFlinkWindows {
   /**
    * Configure Kafka source
    */
-  private static FlinkKafkaConsumer082<String> kafkaSource(BenchmarkConfig config) {
-    return new FlinkKafkaConsumer082<>(
+  private static FlinkKafkaConsumer09<String> kafkaSource(BenchmarkConfig config) {
+    return new FlinkKafkaConsumer09<>(
       config.kafkaTopic,
       new SimpleStringSchema(),
       config.getParameters().getProperties());
@@ -175,13 +173,13 @@ public class AdvertisingTopologyFlinkWindows {
   /**
    * Custom trigger - Fire and purge window when window closes, also fire every 1000 ms.
    */
-  private static class EventAndProcessingTimeTrigger implements Trigger<Object, TimeWindow> {
+  private static class EventAndProcessingTimeTrigger extends Trigger<Object, TimeWindow> {
 
     @Override
     public TriggerResult onElement(Object element, long timestamp, TimeWindow window, TriggerContext ctx) throws Exception {
       ctx.registerEventTimeTimer(window.maxTimestamp());
       // register system timer only for the first time
-      OperatorState<Boolean> firstTimerSet = ctx.getKeyValueState("firstTimerSet", false);
+      ValueState<Boolean> firstTimerSet = ctx.getKeyValueState("firstTimerSet", Boolean.TYPE, false);
       if (!firstTimerSet.value()) {
         ctx.registerProcessingTimeTimer(System.currentTimeMillis() + 1000L);
         firstTimerSet.update(true);

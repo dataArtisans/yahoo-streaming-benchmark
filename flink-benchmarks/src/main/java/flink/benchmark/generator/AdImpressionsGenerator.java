@@ -2,10 +2,9 @@ package flink.benchmark.generator;
 
 import flink.benchmark.BenchmarkConfig;
 import flink.benchmark.utils.ThroughputLogger;
-import org.apache.flink.api.java.utils.ParameterTool;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer09;
 import org.apache.flink.streaming.connectors.kafka.partitioner.FixedPartitioner;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 
@@ -43,7 +42,7 @@ public class AdImpressionsGenerator {
 
 		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000));
 
-    adImpressions.addSink(new FlinkKafkaProducer<>(
+    adImpressions.addSink(new FlinkKafkaProducer09<>(
       benchmarkConfig.kafkaTopic,
       new SimpleStringSchema(),
       benchmarkConfig.getParameters().getProperties(),

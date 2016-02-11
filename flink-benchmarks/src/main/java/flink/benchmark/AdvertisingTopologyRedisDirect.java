@@ -17,7 +17,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer09;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
@@ -71,7 +71,7 @@ public class AdvertisingTopologyRedisDirect {
       source = eventGenerator;
       sourceName = "EventGenerator";
     } else {
-      source = new FlinkKafkaConsumer082<>(config.kafkaTopic, new SimpleStringSchema(), config.getParameters().getProperties());
+      source = new FlinkKafkaConsumer09<>(config.kafkaTopic, new SimpleStringSchema(), config.getParameters().getProperties());
       sourceName = "Kafka";
     }
 

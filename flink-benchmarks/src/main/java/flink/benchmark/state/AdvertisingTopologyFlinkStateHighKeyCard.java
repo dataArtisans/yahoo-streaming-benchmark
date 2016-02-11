@@ -24,7 +24,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AscendingTimestampExtractor;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer08;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer09;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 
@@ -127,8 +127,8 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
   /**
    * Setup kafka source
    */
-  private static FlinkKafkaConsumer08<String> kafkaSource(BenchmarkConfig config) {
-    return new FlinkKafkaConsumer08<>(
+  private static FlinkKafkaConsumer09<String> kafkaSource(BenchmarkConfig config) {
+    return new FlinkKafkaConsumer09<>(
       config.kafkaTopic,
       new SimpleStringSchema(),
       config.getParameters().getProperties());
