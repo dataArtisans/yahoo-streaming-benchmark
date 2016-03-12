@@ -21,10 +21,11 @@ import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.WindowedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.TimestampExtractor;
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.triggers.Trigger;
 import org.apache.flink.streaming.api.windowing.triggers.TriggerResult;
@@ -36,6 +37,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import redis.clients.jedis.Jedis;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -60,14 +62,14 @@ public class AdvertisingTopologyFlinkWindows {
     DataStream<String> rawMessageStream = streamSource(config, env);
 
     // log performance
-    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 10_000));
+    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
 
     DataStream<Tuple2<String, String>> joinedAdImpressions = rawMessageStream
       .flatMap(new DeserializeBolt())
       .filter(new EventFilterBolt())
       .<Tuple2<String, String>>project(2, 5) //ad_id, event_time
       .flatMap(new RedisJoinBolt(config)) // campaign_id, event_time
-      .assignTimestamps(new AdTimestampExtractor()); // extract timestamps and generate watermarks from event_time
+      .assignTimestampsAndWatermarks(new AdTimestampExtractor()); // extract timestamps and generate watermarks from event_time
 
     WindowedStream<Tuple3<String, String, Long>, Tuple, TimeWindow> windowStream = joinedAdImpressions
       .map(new MapToImpressionCount())
@@ -150,11 +152,16 @@ public class AdvertisingTopologyFlinkWindows {
   private static WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow> sumWindowFunction() {
     return new WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>() {
       @Override
-      public void apply(Tuple keyTuple, TimeWindow window, Tuple3<String, String, Long> tuple, Collector<Tuple3<String, String, Long>> out) throws Exception {
-        if(tuple != null) {
-          // TODO : I'm not sure why this is null sometimes
-          tuple.f1 = Long.toString(window.getEnd());
-          out.collect(tuple); // collect end time here
+      public void apply(Tuple keyTuple, TimeWindow timeWindow, Iterable<Tuple3<String, String, Long>> windowContents, Collector<Tuple3<String, String, Long>> collector) throws Exception {
+        Iterator<Tuple3<String, String, Long>> iterator = windowContents.iterator();
+        if(iterator.hasNext()){
+          Tuple3<String, String, Long> tuple = iterator.next();
+          if(tuple != null) {
+            collector.collect(tuple);
+          }
+        }
+        if(iterator.hasNext()){
+          throw new IllegalStateException("There should only be one element due to reduce function.");
         }
       }
     };
@@ -278,7 +285,7 @@ public class AdvertisingTopologyFlinkWindows {
   /**
    * Generate timestamp and watermarks for data stream
    */
-  private static class AdTimestampExtractor implements TimestampExtractor<Tuple2<String, String>> {
+  private static class AdTimestampExtractor implements AssignerWithPeriodicWatermarks<Tuple2<String, String>> {
 
     long maxTimestampSeen = 0;
 
@@ -290,14 +297,8 @@ public class AdvertisingTopologyFlinkWindows {
     }
 
     @Override
-    public long extractWatermark(Tuple2<String, String> element, long currentTimestamp) {
-      return Long.MIN_VALUE;
-    }
-
-    @Override
-    public long getCurrentWatermark() {
-      long watermark = maxTimestampSeen - 1L;
-      return watermark;
+    public Watermark getCurrentWatermark() {
+      return new Watermark(maxTimestampSeen-1);
     }
   }
 
