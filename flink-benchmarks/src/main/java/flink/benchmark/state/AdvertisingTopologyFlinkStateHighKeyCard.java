@@ -55,7 +55,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
     DataStream<String> rawMessageStream = streamSource(config, env);
 
     // log performance
-    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000, "consumer"));
 
     DataStream<UUID> campaignHits = rawMessageStream
       .flatMap(new Deserializer())

@@ -25,7 +25,7 @@ public class StaticStringRepeater {
 		env.getConfig().setGlobalJobParameters(parameterTool);
 
 		DataStream<String> adImpressions = env.addSource(new StringRepeater(parameterTool));
-		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000, "consumer"));
 		adImpressions.addSink(new FlinkKafkaProducer09<>(parameterTool.getRequired("kafka.topic"), new SimpleStringSchema(), parameterTool.getProperties(), new FixedPartitioner()));
 
 		env.execute("StaticStringRepeater" + parameterTool.toMap().toString());

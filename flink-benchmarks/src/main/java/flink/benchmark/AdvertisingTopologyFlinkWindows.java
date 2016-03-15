@@ -62,10 +62,10 @@ public class AdvertisingTopologyFlinkWindows {
     DataStream<String> rawMessageStream = streamSource(config, env);
 
     // log performance
-    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000, "consumer"));
 
     DataStream<Tuple2<String, String>> joinedAdImpressions = rawMessageStream
-      .flatMap(new DeserializeBolt())
+      .flatMap(new DeserializeBolt()).name("blah")
       .filter(new EventFilterBolt())
       .<Tuple2<String, String>>project(2, 5) //ad_id, event_time
       .flatMap(new RedisJoinBolt(config)) // campaign_id, event_time

@@ -40,7 +40,7 @@ public class AdvertisingTopologyRedisDirect {
 
     DataStream<String> messageStream = sourceStream(config, env);
 
-    messageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    messageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000, "consumer"));
 
     messageStream
       .rebalance()

@@ -23,7 +23,7 @@ public class AdImpressionsGeneratorHighKeyCardinality {
 		SourceFunction<String> source = new HighKeyCardinalityGeneratorSource(benchmarkConfig);
 		DataStream<String> adImpressions = env.addSource(source);
 
-		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000, "generator"));
 
 		adImpressions.addSink(new FlinkKafkaProducer09<>(
 				benchmarkConfig.kafkaTopic,

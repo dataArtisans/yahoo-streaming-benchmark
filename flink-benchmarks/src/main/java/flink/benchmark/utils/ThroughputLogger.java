@@ -14,10 +14,12 @@ public class ThroughputLogger<T> implements FlatMapFunction<T, Integer> {
   private long lastLogTimeMs = -1;
   private int elementSize;
   private long logfreq;
+  private String name;
 
-  public ThroughputLogger(int elementSize, long logfreq) {
+  public ThroughputLogger(int elementSize, long logfreq, String name) {
     this.elementSize = elementSize;
     this.logfreq = logfreq;
+    this.name = name;
   }
 
   @Override
@@ -36,8 +38,8 @@ public class ThroughputLogger<T> implements FlatMapFunction<T, Integer> {
         long timeDiff = now - lastLogTimeMs;
         long elementDiff = totalReceived - lastTotalReceived;
         double ex = (1000/(double)timeDiff);
-        LOG.info("During the last {} ms, we received {} elements. That's {} elements/second/core. {} MB/sec/core. GB received {}",
-          timeDiff, elementDiff, elementDiff*ex, elementDiff*ex*elementSize / 1024 / 1024, (totalReceived * elementSize) / 1024 / 1024 / 1024);
+        LOG.info("During the last {} ms, {} measured {} elements. That's {} elements/second/core. {} MB/sec/core. GB received {}",
+          timeDiff, name, elementDiff, elementDiff*ex, elementDiff*ex*elementSize / 1024 / 1024, (totalReceived * elementSize) / 1024 / 1024 / 1024);
         // reinit
         lastLogTimeMs = now;
         lastTotalReceived = totalReceived;

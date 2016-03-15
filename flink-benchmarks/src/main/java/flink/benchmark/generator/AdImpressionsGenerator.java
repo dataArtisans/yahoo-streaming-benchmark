@@ -40,7 +40,7 @@ public class AdImpressionsGenerator {
 
     DataStream<String> adImpressions = env.addSource(eventGenerator);
 
-		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+		adImpressions.flatMap(new ThroughputLogger<String>(240, 1_000_000, "generator"));
 
     adImpressions.addSink(new FlinkKafkaProducer09<>(
       benchmarkConfig.kafkaTopic,
