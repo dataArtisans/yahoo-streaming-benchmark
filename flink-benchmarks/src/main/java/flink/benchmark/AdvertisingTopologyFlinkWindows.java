@@ -27,6 +27,7 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.triggers.Trigger;
+import org.apache.flink.streaming.api.windowing.triggers.TriggerResult;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
@@ -175,13 +176,13 @@ public class AdvertisingTopologyFlinkWindows {
   /**
    * Custom trigger - Fire and purge window when window closes, also fire every 1000 ms.
    */
-  private static class EventAndProcessingTimeTrigger implements Trigger<Object, TimeWindow> {
+  private static class EventAndProcessingTimeTrigger extends Trigger<Object, TimeWindow> {
 
     @Override
     public TriggerResult onElement(Object element, long timestamp, TimeWindow window, TriggerContext ctx) throws Exception {
       ctx.registerEventTimeTimer(window.maxTimestamp());
       // register system timer only for the first time
-      OperatorState<Boolean> firstTimerSet = ctx.getKeyValueState("firstTimerSet", false);
+      OperatorState<Boolean> firstTimerSet = ctx.getKeyValueState("firstTimerSet", Boolean.class, false);
       if (!firstTimerSet.value()) {
         ctx.registerProcessingTimeTimer(System.currentTimeMillis() + 1000L);
         firstTimerSet.update(true);

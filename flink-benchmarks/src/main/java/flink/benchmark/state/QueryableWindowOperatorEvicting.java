@@ -24,16 +24,13 @@ import akka.actor.Props;
 import com.typesafe.config.Config;
 
 import org.apache.flink.api.common.functions.RuntimeContext;
-import org.apache.flink.api.java.tuple.Tuple2;
+import org.apache.flink.api.common.state.StateBackend;
 import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.api.java.typeutils.runtime.DataOutputViewStream;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.core.memory.DataInputView;
-import org.apache.flink.core.memory.DataOutputView;
-import org.apache.flink.core.memory.DataOutputViewStreamWrapper;
 import org.apache.flink.runtime.akka.AkkaUtils;
+import org.apache.flink.runtime.state.AbstractStateBackend;
 import org.apache.flink.runtime.state.AsynchronousStateHandle;
-import org.apache.flink.runtime.state.StateBackend;
 import org.apache.flink.runtime.state.StateHandle;
 import org.apache.flink.streaming.api.operators.AbstractStreamOperator;
 import org.apache.flink.streaming.api.operators.OneInputStreamOperator;
@@ -380,13 +377,13 @@ public class QueryableWindowOperatorEvicting
 		private final long checkpointId;
 		private final long timestamp;
 		private Map<Long, Map<UUID, CountAndAccessTime>> stateSnapshot;
-		private StateBackend<?> backend;
+		private AbstractStateBackend backend;
 		private long size = 0;
 
 		public DataInputViewAsynchronousStateHandle(long checkpointId,
 				long timestamp,
 				Map<Long, Map<UUID, CountAndAccessTime>> stateSnapshot,
-				StateBackend<?> backend) {
+													AbstractStateBackend backend) {
 			this.checkpointId = checkpointId;
 			this.timestamp = timestamp;
 			this.stateSnapshot = stateSnapshot;
@@ -395,8 +392,8 @@ public class QueryableWindowOperatorEvicting
 
 		@Override
 		public StateHandle<DataInputView> materialize() throws Exception {
-			
-			StateBackend.CheckpointStateOutputView out =
+
+			AbstractStateBackend.CheckpointStateOutputView out =
 					backend.createCheckpointStateOutputView(checkpointId, timestamp);
 			
 			out.writeInt(stateSnapshot.size());

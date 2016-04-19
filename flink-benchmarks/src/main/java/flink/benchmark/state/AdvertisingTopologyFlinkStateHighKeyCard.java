@@ -60,7 +60,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
     DataStream<UUID> campaignHits = rawMessageStream
       .flatMap(new Deserializer())
       .filter(new EventFilter())
-      .assignTimestamps(new AdTimestampExtractor()) // assign event time stamp and generate watermark
+      .assignTimestampsAndWatermarks(new AdTimestampExtractor()) // assign event time stamp and generate watermark
       .map(new Projector());
 
     // campaign_id, event time
@@ -196,7 +196,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
    */
   public static class AdTimestampExtractor extends AscendingTimestampExtractor<Tuple7<String, String, String, String, String, String, String>> {
     @Override
-    public long extractAscendingTimestamp(Tuple7<String, String, String, String, String, String, String> element, long currentTimestamp) {
+    public long extractAscendingTimestamp(Tuple7<String, String, String, String, String, String, String> element) {
       return Long.parseLong(element.f5);
     }
   }
