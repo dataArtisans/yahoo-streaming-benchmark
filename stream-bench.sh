@@ -15,8 +15,8 @@ KAFKA_VERSION=${KAFKA_VERSION:-"0.8.2.1"}
 REDIS_VERSION=${REDIS_VERSION:-"3.0.5"}
 SCALA_BIN_VERSION=${SCALA_BIN_VERSION:-"2.10"}
 SCALA_SUB_VERSION=${SCALA_SUB_VERSION:-"4"}
-STORM_VERSION=${STORM_VERSION:-"0.10.0"}
-FLINK_VERSION=${FLINK_VERSION:-"0.10.1"}
+STORM_VERSION=${STORM_VERSION:-"1.0.0"}
+FLINK_VERSION=${FLINK_VERSION:-"1.0.1"}
 SPARK_VERSION=${SPARK_VERSION:-"1.5.1"}
 
 STORM_DIR="apache-storm-$STORM_VERSION"
@@ -141,7 +141,7 @@ run() {
 
     #Fetch Flink
     FLINK_FILE="$FLINK_DIR-bin-hadoop27-scala_${SCALA_BIN_VERSION}.tgz"
-    fetch_untar_file "$FLINK_FILE" "http://apache.mirrorcatalogs.com/flink/flink-$FLINK_VERSION/$FLINK_FILE"
+    fetch_untar_file "$FLINK_FILE" "http://mirror.nexcess.net/apache/flink/flink-$FLINK_VERSION/$FLINK_FILE"
 
     #Fetch Spark
     SPARK_FILE="$SPARK_DIR.tgz"
@@ -228,7 +228,7 @@ run() {
     stop_if_needed spark.benchmark.KafkaRedisAdvertisingStream "Spark Client Process"
   elif [ "START_FLINK_PROCESSING" = "$OPERATION" ];
   then
-    "$FLINK_DIR/bin/flink" run ./flink-benchmarks/target/flink-benchmarks-0.1.0.jar --confPath $CONF_FILE &
+    "$FLINK_DIR/bin/flink" run ./flink-benchmarks/target/flink-benchmarks-0.1.0.jar $CONF_FILE &
     sleep 3
   elif [ "STOP_FLINK_PROCESSING" = "$OPERATION" ];
   then
