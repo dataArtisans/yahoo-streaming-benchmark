@@ -106,20 +106,43 @@ run() {
 
     echo 'kafka.brokers:' > $CONF_FILE
     echo '    - "localhost"' >> $CONF_FILE
+    echo 'kafka.port: 9092' >> $CONF_FILE
+    echo 'kafka.topic: "'$TOPIC'"' >> $CONF_FILE
+    echo 'kafka.partitions: '$PARTITIONS >> $CONF_FILE
+    echo 'kafka.zookeeper.path: /' >> $CONF_FILE
+    echo >> $CONF_FILE
+    echo 'akka.zookeeper.path: /akkaQuery' >> $CONF_FILE
     echo >> $CONF_FILE
     echo 'zookeeper.servers:' >> $CONF_FILE
     echo '    - "'$ZK_HOST'"' >> $CONF_FILE
+    echo 'zookeeper.port: '$ZK_PORT >> $CONF_FILE
     echo >> $CONF_FILE
-    echo 'kafka.port: 9092' >> $CONF_FILE
-	echo 'zookeeper.port: '$ZK_PORT >> $CONF_FILE
-	echo 'redis.host: "localhost"' >> $CONF_FILE
-	echo 'kafka.topic: "'$TOPIC'"' >> $CONF_FILE
-	echo 'kafka.partitions: '$PARTITIONS >> $CONF_FILE
-	echo 'process.hosts: 1' >> $CONF_FILE
-	echo 'process.cores: 4' >> $CONF_FILE
-	echo 'storm.workers: 1' >> $CONF_FILE
-	echo 'storm.ackers: 2' >> $CONF_FILE
-	echo 'spark.batchtime: 2000' >> $CONF_FILE
+    echo 'redis.host: "localhost"' >> $CONF_FILE
+    echo >> $CONF_FILE
+    echo 'process.hosts: 1' >> $CONF_FILE
+    echo 'process.cores: 4' >> $CONF_FILE
+    echo >> $CONF_FILE
+    echo '#STORM Specific' >> $CONF_FILE
+    echo 'storm.workers: 1' >> $CONF_FILE
+    echo 'storm.ackers: 2' >> $CONF_FILE
+    echo 'storm.highcard.redisthreads: 20' >> $CONF_FILE
+    echo >> $CONF_FILE
+    echo '#Spark Specific' >> $CONF_FILE
+    echo 'spark.batchtime: 2000' >> $CONF_FILE
+    echo >> $CONF_FILE
+    echo '#Flink Specific' >> $CONF_FILE
+    echo 'group.id: "flink_yahoo_benchmark"' >> $CONF_FILE
+    echo 'flink.checkpoint.interval: 60000' >> $CONF_FILE
+    echo 'add.result.sink: 1' >> $CONF_FILE
+    echo 'flink.highcard.checkpointURI: "file:///tmp/checkpoints"' >> $CONF_FILE
+    echo 'redis.threads: 20' >> $CONF_FILE
+    echo >> $CONF_FILE
+    echo '#EventGenerator' >> $CONF_FILE
+    echo 'use.local.event.generator: 1' >> $CONF_FILE
+    echo 'redis.flush: 1' >> $CONF_FILE
+    echo 'redis.db: 0' >> $CONF_FILE
+    echo 'load.target.hz: 10000000' >> $CONF_FILE
+    echo 'num.campaigns: 1000000' >> $CONF_FILE
 	
     $MVN clean install -Dspark.version="$SPARK_VERSION" -Dkafka.version="$KAFKA_VERSION" -Dflink.version="$FLINK_VERSION" -Dstorm.version="$STORM_VERSION" -Dscala.binary.version="$SCALA_BIN_VERSION" -Dscala.version="$SCALA_BIN_VERSION.$SCALA_SUB_VERSION"
 
