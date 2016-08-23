@@ -18,6 +18,6 @@
 
 package flink.benchmark.state;
 
-public interface QueryableKeyValueState<K, V> {
+interface QueryableKeyValueState<K, V> {
 	V getValue(Long windowEnd, K key) throws WrongKeyPartitionException;
 }

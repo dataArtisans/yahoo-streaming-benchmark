@@ -5,12 +5,12 @@
 package flink.benchmark.state;
 
 import benchmark.common.advertising.RedisAdCampaignCache;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import flink.benchmark.BenchmarkConfig;
 import flink.benchmark.generator.EventGeneratorSource;
 import flink.benchmark.generator.RedisHelper;
 import flink.benchmark.utils.ThroughputLogger;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.common.typeinfo.TypeInformation;
@@ -22,7 +22,7 @@ import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer09;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
@@ -57,14 +57,14 @@ public class AdvertisingTopologyFlinkState {
     DataStream<String> rawMessageStream = sourceStream(config, env);
 
     // log performance
-    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    rawMessageStream.flatMap(new ThroughputLogger<>(240, 1_000_000));
 
     // campaign_id, window end time
-    DataStream<Tuple3<String, Long, Long>> result = rawMessageStream
-      .flatMap(new DeserializeBolt())
-      .flatMap(new RedisJoinBolt(config))
-      .keyBy(0) // campaign_id
-      .transform("Query Window", queryWindowResultType, new QueryableWindowOperator(config.windowSize, registrationService));
+    rawMessageStream
+        .flatMap(new DeserializeBolt())
+        .flatMap(new RedisJoinBolt(config))
+        .keyBy(0) // campaign_id
+        .transform("Query Window", queryWindowResultType, new QueryableWindowOperator(config.windowSize, registrationService));
 
     env.execute();
   }
@@ -100,11 +100,11 @@ public class AdvertisingTopologyFlinkState {
   /**
    * Create a Kafka source
    */
-  private static FlinkKafkaConsumer082<String> kafkaSource(BenchmarkConfig config) {
-    return new FlinkKafkaConsumer082<>(
-      config.kafkaTopic,
-      new SimpleStringSchema(),
-      config.getParameters().getProperties());
+  private static FlinkKafkaConsumer09<String> kafkaSource(BenchmarkConfig config) {
+    return new FlinkKafkaConsumer09<>(
+        config.kafkaTopic,
+        new SimpleStringSchema(),
+        config.getParameters().getProperties());
   }
 
   /**
@@ -112,19 +112,15 @@ public class AdvertisingTopologyFlinkState {
    */
   private static class DeserializeBolt implements FlatMapFunction<String, Tuple2<String, String>> {
 
-    transient JSONParser p = null;
-
     @Override
     public void flatMap(String input, Collector<Tuple2<String, String>> out)
-      throws Exception {
-      if (p == null) {
-        p = new JSONParser();
-      }
-      JSONObject obj = (JSONObject) p.parse(input);
+        throws Exception {
+
+      JSONObject obj = JSON.parseObject(input);
       // filter
-      if (obj.getAsString("event_type").equals("view")) {
+      if (obj.getString("event_type").equals("view")) {
         // project
-        Tuple2<String, String> tuple = new Tuple2<>(obj.getAsString("ad_id"), obj.getAsString("event_time"));
+        Tuple2<String, String> tuple = new Tuple2<>(obj.getString("ad_id"), obj.getString("event_time"));
         out.collect(tuple);
       }
     }
@@ -138,7 +134,7 @@ public class AdvertisingTopologyFlinkState {
     RedisAdCampaignCache redisAdCampaignCache;
     private BenchmarkConfig config;
 
-    RedisJoinBolt(BenchmarkConfig config){
+    RedisJoinBolt(BenchmarkConfig config) {
       this.config = config;
     }
 

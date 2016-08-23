@@ -18,17 +18,17 @@
 
 package flink.benchmark.state;
 
-public class WrongKeyPartitionException extends Exception {
+class WrongKeyPartitionException extends Exception {
 
-	public WrongKeyPartitionException(String msg) {
-		super(msg);
-	}
+  WrongKeyPartitionException(String msg) {
+    super(msg);
+  }
 
-	public WrongKeyPartitionException(Throwable cause) {
-		super(cause);
-	}
+  public WrongKeyPartitionException(Throwable cause) {
+    super(cause);
+  }
 
-	public WrongKeyPartitionException(String msg, Throwable cause) {
-		super(msg, cause);
-	}
+  public WrongKeyPartitionException(String msg, Throwable cause) {
+    super(msg, cause);
+  }
 }

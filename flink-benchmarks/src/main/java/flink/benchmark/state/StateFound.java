@@ -20,21 +20,21 @@ package flink.benchmark.state;
 
 import java.io.Serializable;
 
-public class StateFound<K extends Serializable, V extends Serializable> implements QueryResponse {
-	private final K key;
-	private final V value;
+class StateFound<K extends Serializable, V extends Serializable> implements QueryResponse {
+  private final K key;
+  private final V value;
 
-	public StateFound(K key, V value) {
-		this.key = key;
-		this.value = value;
-	}
+  StateFound(K key, V value) {
+    this.key = key;
+    this.value = value;
+  }
 
-	public V getValue() {
-		return value;
-	}
+  public V getValue() {
+    return value;
+  }
 
-	@Override
-	public String toString() {
-		return "StateFound(key: " + key + ", value: " + value + ")";
-	}
+  @Override
+  public String toString() {
+    return "StateFound(key: " + key + ", value: " + value + ")";
+  }
 }

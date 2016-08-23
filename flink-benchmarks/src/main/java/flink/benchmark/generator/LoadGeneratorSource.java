@@ -7,14 +7,14 @@ import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunctio
  * Base class for LoadGenerator Sources.  Implements features to generate whatever load
  * you require.
  */
-public abstract class LoadGeneratorSource<T> extends RichParallelSourceFunction<T> {
+abstract class LoadGeneratorSource<T> extends RichParallelSourceFunction<T> {
 
   private boolean running = true;
 
   private final int loadTargetHz;
   private final int timeSliceLengthMs;
 
-  public LoadGeneratorSource(int loadTargetHz, int timeSliceLengthMs) {
+  LoadGeneratorSource(int loadTargetHz, int timeSliceLengthMs) {
     this.loadTargetHz = loadTargetHz;
     this.timeSliceLengthMs = timeSliceLengthMs;
   }

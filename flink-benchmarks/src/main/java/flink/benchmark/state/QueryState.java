@@ -20,25 +20,25 @@ package flink.benchmark.state;
 
 import java.io.Serializable;
 
-public class QueryState<K extends Serializable> implements Serializable {
-	private final K key;
-	private final Long timestamp;
+class QueryState<K extends Serializable> implements Serializable {
+  private final K key;
+  private final Long timestamp;
 
-	public QueryState(Long timestamp, K key) {
-		this.timestamp = timestamp;
-		this.key = key;
-	}
+  QueryState(Long timestamp, K key) {
+    this.timestamp = timestamp;
+    this.key = key;
+  }
 
-	public K getKey() {
-		return key;
-	}
+  public K getKey() {
+    return key;
+  }
 
-	public Long getTimestamp() {
-		return timestamp;
-	}
+  Long getTimestamp() {
+    return timestamp;
+  }
 
-	@Override
-	public String toString() {
-		return "QueryState(" + timestamp + ", " + key + ")";
-	}
+  @Override
+  public String toString() {
+    return "QueryState(" + timestamp + ", " + key + ")";
+  }
 }

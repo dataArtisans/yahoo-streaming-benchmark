@@ -2,6 +2,43 @@
 # Extending the Yahoo Streaming Benchmarks 
 
 
+###  Get Start
+
+The get start shell script:`./stream-bench.sh`
+
+```
+Supported Operations:
+SETUP: download and setup dependencies for running a single node test
+START_ZK: run a single node ZooKeeper instance on local host in the background
+STOP_ZK: kill the ZooKeeper instance
+START_REDIS: run a redis instance in the background
+STOP_REDIS: kill the redis instance
+START_KAFKA: run kafka in the background
+STOP_KAFKA: kill kafka
+START_LOAD: run kafka load generation
+STOP_LOAD: kill kafka load generation
+START_STORM: run storm daemons in the background
+STOP_STORM: kill the storm daemons
+START_FLINK: run flink processes
+STOP_FLINK: kill flink processes
+START_SPARK: run spark processes
+STOP_SPARK: kill spark processes
+
+START_STORM_TOPOLOGY: run the storm test topology
+STOP_STORM_TOPOLOGY: kill the storm test topology
+START_FLINK_PROCESSING: run the flink test processing
+STOP_FLINK_PROCESSSING: kill the flink test processing
+START_SPARK_PROCESSING: run the spark test processing
+STOP_SPARK_PROCESSSING: kill the spark test processing
+
+STORM_TEST: run storm test (assumes SETUP is done)
+FLINK_TEST: run flink test (assumes SETUP is done)
+SPARK_TEST: run spark test (assumes SETUP is done)
+STOP_ALL: stop everything
+
+HELP: print out this message
+```
+
 ### Background
 This code is a fork of the original [Yahoo! Streaming benchmark code](https://github.com/yahoo/streaming-benchmarks).
 

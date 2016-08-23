@@ -17,14 +17,14 @@ import java.util.regex.Pattern;
 
 public class AnalyzeTool {
 
-	public static class Result {
+	private static class Result {
 
 		DescriptiveStatistics latencies;
 		SummaryStatistics throughputs;
 		Map<String, DescriptiveStatistics> perHostLat;
 		Map<String, SummaryStatistics> perHostThr;
 
-		public Result(DescriptiveStatistics latencies, SummaryStatistics throughputs, Map<String, DescriptiveStatistics> perHostLat, Map<String, SummaryStatistics> perHostThr) {
+		Result(DescriptiveStatistics latencies, SummaryStatistics throughputs, Map<String, DescriptiveStatistics> perHostLat, Map<String, SummaryStatistics> perHostThr) {
 			this.latencies = latencies;
 			this.throughputs = throughputs;
 			this.perHostLat = perHostLat;
@@ -32,7 +32,7 @@ public class AnalyzeTool {
 		}
 	}
 
-	public static Result analyze(String file, List<String> toIgnore) throws FileNotFoundException {
+	private static Result analyze(String file, List<String> toIgnore) throws FileNotFoundException {
 		Scanner sc = new Scanner(new File(file));
 
 		String l;
@@ -44,8 +44,8 @@ public class AnalyzeTool {
 		DescriptiveStatistics latencies = new DescriptiveStatistics();
 		SummaryStatistics throughputs = new SummaryStatistics();
 		String currentHost = null;
-		Map<String, DescriptiveStatistics> perHostLat = new HashMap<String, DescriptiveStatistics>();
-		Map<String, SummaryStatistics> perHostThr = new HashMap<String, SummaryStatistics>();
+		Map<String, DescriptiveStatistics> perHostLat = new HashMap<>();
+		Map<String, SummaryStatistics> perHostThr = new HashMap<>();
 
 		while( sc.hasNextLine()) {
 			l = sc.nextLine();
@@ -104,7 +104,7 @@ public class AnalyzeTool {
 		System.out.println("all-machines;" + latencies.getMean() + ";" + latencies.getPercentile(50) + ";" + latencies.getPercentile(90) + ";" + latencies.getPercentile(95) + ";" + latencies.getPercentile(99)+ ";" + throughputs.getMean() + ";" + throughputs.getMax() + ";" + latencies.getN() + ";" + throughputs.getN());
 
 		System.err.println("================= Latency (" + r1.perHostLat.size() + " reports ) =====================");
-		List<Map.Entry<String, DescriptiveStatistics>> orderedPerHostLatency = new ArrayList<Map.Entry<String, DescriptiveStatistics>>();
+		List<Map.Entry<String, DescriptiveStatistics>> orderedPerHostLatency = new ArrayList<>();
 
 		for(Map.Entry<String, DescriptiveStatistics> entry : r1.perHostLat.entrySet()) {
 			System.err.println("====== "+entry.getKey()+" (entries: "+entry.getValue().getN()+") =======");
@@ -119,19 +119,16 @@ public class AnalyzeTool {
 			System.err.println("Mean throughput " + entry.getValue().getMean());
 		}
 
-		Collections.sort(orderedPerHostLatency, new Comparator<Map.Entry<String, DescriptiveStatistics>>() {
-			@Override
-			public int compare(Map.Entry<String, DescriptiveStatistics> o1, Map.Entry<String, DescriptiveStatistics> o2) {
-				if (o1.getValue().getMean() < o2.getValue().getMean()) {
-					return 1;
-				} else {
-					return -1;
-				}
-			}
-		});
+		Collections.sort(orderedPerHostLatency, (o1, o2) -> {
+      if (o1.getValue().getMean() < o2.getValue().getMean()) {
+        return 1;
+      } else {
+        return -1;
+      }
+    });
 
 		List<Map.Entry<String, DescriptiveStatistics>> statsToIgnore = orderedPerHostLatency.subList(0, 2);
-		List<String> toIgnore = new ArrayList<String>();
+		List<String> toIgnore = new ArrayList<>();
 		System.err.println("============= HOSTS TO IGNORE (num: "+statsToIgnore.size()+") ============== ");
 		for(Map.Entry<String, DescriptiveStatistics> entry : statsToIgnore) {
 			System.err.println("====== "+entry.getKey()+" (entries: "+entry.getValue().getN()+") =======");
@@ -145,8 +142,5 @@ public class AnalyzeTool {
 		throughputs = finalResult.throughputs;
 
 		System.out.println("-2-machines;" + latencies.getMean() + ";" + latencies.getPercentile(50) + ";" + latencies.getPercentile(90) + ";" + latencies.getPercentile(95) + ";" + latencies.getPercentile(99)+ ";" + throughputs.getMean() + ";" + throughputs.getMax() + ";" + latencies.getN() + ";" + throughputs.getN());
-
-
-
 	}
 }

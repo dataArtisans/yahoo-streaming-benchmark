@@ -13,11 +13,11 @@ public class HighKeyCardinalityGeneratorSource extends LoadGeneratorSource<Strin
   private static final String[] eventTypes = {"view", "click", "purchase"};
 
   private int eventsIdx = 0;
-  final StringBuilder elementBase = elementBase();
-  final int resetSize = elementBase.length();
-  final long campaignMsb = UUID.randomUUID().getMostSignificantBits();
-  final long campaignLsbTemplate = UUID.randomUUID().getLeastSignificantBits() & 0xffffffff00000000L;
-  final Random random = new Random();
+  private final StringBuilder elementBase = elementBase();
+  private final int resetSize = elementBase.length();
+  private final long campaignMsb = UUID.randomUUID().getMostSignificantBits();
+  private final long campaignLsbTemplate = UUID.randomUUID().getLeastSignificantBits() & 0xffffffff00000000L;
+  private final Random random = new Random();
 
   private final int numCampaigns;
 

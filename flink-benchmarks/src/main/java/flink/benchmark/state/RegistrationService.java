@@ -20,12 +20,12 @@ package flink.benchmark.state;
 
 import java.io.IOException;
 
-public interface RegistrationService {
-	void start();
+interface RegistrationService {
+  void start();
 
-	void stop();
+  void stop();
 
-	void registerActor(int partition, String actorURL) throws Exception;
+  void registerActor(int partition, String actorURL) throws Exception;
 
-	String getConnectingHostname() throws IOException;
+  String getConnectingHostname() throws IOException;
 }

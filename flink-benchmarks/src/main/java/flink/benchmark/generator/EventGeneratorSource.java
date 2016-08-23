@@ -83,9 +83,7 @@ public class EventGeneratorSource extends LoadGeneratorSource<String> {
     // Flatten campaigns into simple list of ads
     List<String> ads = new ArrayList<>();
     for (Map.Entry<String, List<String>> entry : campaigns.entrySet()) {
-      for (String ad : entry.getValue()) {
-        ads.add(ad);
-      }
+      ads.addAll(entry.getValue());
     }
     return ads;
   }

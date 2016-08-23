@@ -20,5 +20,5 @@ package flink.benchmark.state;
 
 import java.io.Serializable;
 
-public interface QueryResponse extends Serializable {
+interface QueryResponse extends Serializable {
 }

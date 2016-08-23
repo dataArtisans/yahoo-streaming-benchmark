@@ -5,11 +5,11 @@
 package flink.benchmark;
 
 import benchmark.common.advertising.RedisAdCampaignCache;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import flink.benchmark.generator.EventGeneratorSource;
 import flink.benchmark.generator.RedisHelper;
 import flink.benchmark.utils.ThroughputLogger;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.*;
 import org.apache.flink.api.common.state.OperatorState;
 import org.apache.flink.api.java.tuple.Tuple;
@@ -21,15 +21,16 @@ import org.apache.flink.streaming.api.TimeCharacteristic;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.datastream.WindowedStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.api.functions.TimestampExtractor;
+import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.sink.RichSinkFunction;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
+import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.triggers.Trigger;
 import org.apache.flink.streaming.api.windowing.triggers.TriggerResult;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer09;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
@@ -44,7 +45,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * To Run:  flink run -c flink.benchmark.AdvertisingTopologyFlinkWindows target/flink-benchmarks-0.1.0.jar "../conf/benchmarkConf.yaml"
- *
+ * <p>
  * This job variant uses Flinks built-in windowing and triggering support to compute the windows
  * and trigger when each window is complete as well as once per second.
  */
@@ -61,26 +62,26 @@ public class AdvertisingTopologyFlinkWindows {
     DataStream<String> rawMessageStream = streamSource(config, env);
 
     // log performance
-    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    rawMessageStream.flatMap(new ThroughputLogger<>(240, 1_000_000));
 
     DataStream<Tuple2<String, String>> joinedAdImpressions = rawMessageStream
-      .flatMap(new DeserializeBolt())
-      .filter(new EventFilterBolt())
-      .<Tuple2<String, String>>project(2, 5) //ad_id, event_time
-      .flatMap(new RedisJoinBolt(config)) // campaign_id, event_time
-      .assignTimestamps(new AdTimestampExtractor()); // extract timestamps and generate watermarks from event_time
+        .flatMap(new DeserializeBolt())
+        .filter(new EventFilterBolt())
+        .<Tuple2<String, String>>project(2, 5) //ad_id, event_time
+        .flatMap(new RedisJoinBolt(config)) // campaign_id, event_time
+        .assignTimestampsAndWatermarks(new AdTimestampExtractor()); // extract timestamps and generate watermarks from event_time
 
     WindowedStream<Tuple3<String, String, Long>, Tuple, TimeWindow> windowStream = joinedAdImpressions
-      .map(new MapToImpressionCount())
-      .keyBy(0) // campaign_id
-      .timeWindow(Time.of(config.windowSize, TimeUnit.MILLISECONDS));
+        .map(new MapToImpressionCount())
+        .keyBy(0) // campaign_id
+        .timeWindow(Time.of(config.windowSize, TimeUnit.MILLISECONDS));
 
     // set a custom trigger
     windowStream.trigger(new EventAndProcessingTimeTrigger());
 
     // campaign_id, window end time, count
     DataStream<Tuple3<String, String, Long>> result =
-      windowStream.apply(sumReduceFunction(), sumWindowFunction());
+        windowStream.apply(sumReduceFunction(), sumWindowFunction());
 
     // write result to redis
     if (config.getParameters().has("add.result.sink.optimized")) {
@@ -136,12 +137,9 @@ public class AdvertisingTopologyFlinkWindows {
    * Sum - window reduce function
    */
   private static ReduceFunction<Tuple3<String, String, Long>> sumReduceFunction() {
-    return new ReduceFunction<Tuple3<String, String, Long>>() {
-      @Override
-      public Tuple3<String, String, Long> reduce(Tuple3<String, String, Long> t0, Tuple3<String, String, Long> t1) throws Exception {
-        t0.f2 += t1.f2;
-        return t0;
-      }
+    return (ReduceFunction<Tuple3<String, String, Long>>) (t0, t1) -> {
+      t0.f2 += t1.f2;
+      return t0;
     };
   }
 
@@ -149,28 +147,25 @@ public class AdvertisingTopologyFlinkWindows {
    * Sum - Window function, summing already happened in reduce function
    */
   private static WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow> sumWindowFunction() {
-    return new WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>() {
-      @Override
-      public void apply(Tuple keyTuple, TimeWindow window, Iterable<Tuple3<String, String, Long>> values, Collector<Tuple3<String, String, Long>> out) throws Exception {
-        Iterator<Tuple3<String, String, Long>> valIter = values.iterator();
-        Tuple3<String, String, Long> tuple = valIter.next();
-        if (valIter.hasNext()) {
-          throw new IllegalStateException("Unexpected");
-        }
-        tuple.f1 = Long.toString(window.getEnd());
-        out.collect(tuple); // collect end time here
+    return (WindowFunction<Tuple3<String, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>) (keyTuple, window, values, out) -> {
+      Iterator<Tuple3<String, String, Long>> valIter = values.iterator();
+      Tuple3<String, String, Long> tuple = valIter.next();
+      if (valIter.hasNext()) {
+        throw new IllegalStateException("Unexpected");
       }
+      tuple.f1 = Long.toString(window.getEnd());
+      out.collect(tuple); // collect end time here
     };
   }
 
   /**
    * Configure Kafka source
    */
-  private static FlinkKafkaConsumer082<String> kafkaSource(BenchmarkConfig config) {
-    return new FlinkKafkaConsumer082<>(
-      config.kafkaTopic,
-      new SimpleStringSchema(),
-      config.getParameters().getProperties());
+  private static FlinkKafkaConsumer09<String> kafkaSource(BenchmarkConfig config) {
+    return new FlinkKafkaConsumer09<>(
+        config.kafkaTopic,
+        new SimpleStringSchema(),
+        config.getParameters().getProperties());
   }
 
   /**
@@ -207,27 +202,23 @@ public class AdvertisingTopologyFlinkWindows {
    * Parse JSON
    */
   private static class DeserializeBolt implements
-    FlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
-
-    transient JSONParser parser = null;
+      FlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
 
     @Override
     public void flatMap(String input, Collector<Tuple7<String, String, String, String, String, String, String>> out)
-      throws Exception {
-      if (parser == null) {
-        parser = new JSONParser();
-      }
-      JSONObject obj = (JSONObject) parser.parse(input);
+        throws Exception {
+
+      JSONObject obj = JSON.parseObject(input);
 
       Tuple7<String, String, String, String, String, String, String> tuple =
-        new Tuple7<>(
-          obj.getAsString("user_id"),
-          obj.getAsString("page_id"),
-          obj.getAsString("ad_id"),
-          obj.getAsString("ad_type"),
-          obj.getAsString("event_type"),
-          obj.getAsString("event_time"),
-          obj.getAsString("ip_address"));
+          new Tuple7<>(
+              obj.getString("user_id"),
+              obj.getString("page_id"),
+              obj.getString("ad_id"),
+              obj.getString("ad_type"),
+              obj.getString("event_type"),
+              obj.getString("event_time"),
+              obj.getString("ip_address"));
       out.collect(tuple);
     }
   }
@@ -235,8 +226,8 @@ public class AdvertisingTopologyFlinkWindows {
   /**
    * Filter out all but "view" events
    */
-  public static class EventFilterBolt implements
-    FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
+  private static class EventFilterBolt implements
+      FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
     @Override
     public boolean filter(Tuple7<String, String, String, String, String, String, String> tuple) throws Exception {
       return tuple.getField(4).equals("view");
@@ -251,7 +242,7 @@ public class AdvertisingTopologyFlinkWindows {
     private RedisAdCampaignCache redisAdCampaignCache;
     private BenchmarkConfig config;
 
-    public RedisJoinBolt(BenchmarkConfig config) {
+    RedisJoinBolt(BenchmarkConfig config) {
       this.config = config;
     }
 
@@ -272,7 +263,7 @@ public class AdvertisingTopologyFlinkWindows {
         return;
       }
 
-      Tuple2<String, String> tuple = new Tuple2<>(campaign_id, (String) input.getField(1)); // event_time
+      Tuple2<String, String> tuple = new Tuple2<>(campaign_id, input.getField(1)); // event_time
       out.collect(tuple);
     }
   }
@@ -281,7 +272,7 @@ public class AdvertisingTopologyFlinkWindows {
   /**
    * Generate timestamp and watermarks for data stream
    */
-  private static class AdTimestampExtractor implements TimestampExtractor<Tuple2<String, String>> {
+  private static class AdTimestampExtractor implements AssignerWithPeriodicWatermarks<Tuple2<String, String>> {
 
     long maxTimestampSeen = 0;
 
@@ -293,14 +284,8 @@ public class AdvertisingTopologyFlinkWindows {
     }
 
     @Override
-    public long extractWatermark(Tuple2<String, String> element, long currentTimestamp) {
-      return Long.MIN_VALUE;
-    }
-
-    @Override
-    public long getCurrentWatermark() {
-      long watermark = maxTimestampSeen - 1L;
-      return watermark;
+    public Watermark getCurrentWatermark() {
+      return new Watermark(maxTimestampSeen - 1L);
     }
   }
 
@@ -322,7 +307,7 @@ public class AdvertisingTopologyFlinkWindows {
 
     private BenchmarkConfig config;
 
-    public RedisResultSink(BenchmarkConfig config) {
+    RedisResultSink(BenchmarkConfig config) {
       this.config = config;
     }
 
@@ -379,7 +364,7 @@ public class AdvertisingTopologyFlinkWindows {
     private final BenchmarkConfig config;
     private Jedis flushJedis;
 
-    public RedisResultSinkOptimized(BenchmarkConfig config){
+    RedisResultSinkOptimized(BenchmarkConfig config) {
       this.config = config;
     }
 

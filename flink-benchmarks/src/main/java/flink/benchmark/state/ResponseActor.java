@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.Serializable;
 
-public class ResponseActor<K extends Serializable, V extends Serializable> extends UntypedActor {
+class ResponseActor<K extends Serializable, V extends Serializable> extends UntypedActor {
 	private static final Logger LOG = LoggerFactory.getLogger(ResponseActor.class);
 
 	private final QueryableKeyValueState<K, V> keyValueState;

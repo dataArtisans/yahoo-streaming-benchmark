@@ -20,7 +20,7 @@ package flink.benchmark.state;
 
 import java.io.Serializable;
 
-public class ZooKeeperConfiguration implements Serializable {
+class ZooKeeperConfiguration implements Serializable {
 	private final String rootPath;
 	private final String zkQuorum;
 	private final int sessionTimeout;
@@ -28,13 +28,13 @@ public class ZooKeeperConfiguration implements Serializable {
 	private final int retryWait;
 	private final int maxRetryAttempts;
 
-	public ZooKeeperConfiguration(
-		String rootPath,
-		String zkQuorum,
-		int sessionTimeout,
-		int connectionTimeout,
-		int retryWait,
-		int maxRetryAttempts) {
+	private ZooKeeperConfiguration(
+			String rootPath,
+			String zkQuorum,
+			int sessionTimeout,
+			int connectionTimeout,
+			int retryWait,
+			int maxRetryAttempts) {
 		this.rootPath = rootPath;
 		this.zkQuorum = zkQuorum;
 		this.sessionTimeout = sessionTimeout;
@@ -43,7 +43,7 @@ public class ZooKeeperConfiguration implements Serializable {
 		this.maxRetryAttempts = maxRetryAttempts;
 	}
 
-	public ZooKeeperConfiguration(String rootPath, String zkQuorum) {
+	ZooKeeperConfiguration(String rootPath, String zkQuorum) {
 		this(
 			rootPath,
 			zkQuorum,
@@ -53,27 +53,27 @@ public class ZooKeeperConfiguration implements Serializable {
 			3);
 	}
 
-	public String getRootPath() {
+	String getRootPath() {
 		return rootPath;
 	}
 
-	public String getZkQuorum() {
+	String getZkQuorum() {
 		return zkQuorum;
 	}
 
-	public int getSessionTimeout() {
+	int getSessionTimeout() {
 		return sessionTimeout;
 	}
 
-	public int getConnectionTimeout() {
+	int getConnectionTimeout() {
 		return connectionTimeout;
 	}
 
-	public int getRetryWait() {
+	int getRetryWait() {
 		return retryWait;
 	}
 
-	public int getMaxRetryAttempts() {
+	int getMaxRetryAttempts() {
 		return maxRetryAttempts;
 	}
 }
