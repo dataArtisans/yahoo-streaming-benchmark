@@ -29,7 +29,7 @@ public class BenchmarkConfig implements Serializable{
   public final String redisHost;
   public final int redisDb;
   public final boolean redisFlush;
-  public final int numRedisThreads;
+  final int numRedisThreads;
 
   // Akka
   public final String akkaZookeeperQuorum;
@@ -45,7 +45,7 @@ public class BenchmarkConfig implements Serializable{
   public boolean checkpointToUri;
 
   // The raw parameters
-  public final ParameterTool parameters;
+  final ParameterTool parameters;
 
 
   /**
@@ -112,7 +112,7 @@ public class BenchmarkConfig implements Serializable{
   private static ParameterTool yamlToParameters(String yamlFile) throws FileNotFoundException {
     // load yaml file
     Yaml yml = new Yaml(new SafeConstructor());
-    Map<String, String> ymlMap = (Map) yml.load(new FileInputStream(yamlFile));
+    Map<String, String> ymlMap = (Map<String, String>) yml.load(new FileInputStream(yamlFile));
 
     String kafkaZookeeperConnect = getZookeeperServers(ymlMap, String.valueOf(ymlMap.get("kafka.zookeeper.path")));
     String akkaZookeeperQuorum = getZookeeperServers(ymlMap, "");
@@ -127,9 +127,9 @@ public class BenchmarkConfig implements Serializable{
     ymlMap.put("group.id", UUID.randomUUID().toString());
 
     // Convert everything to strings
-    for (Map.Entry e : ymlMap.entrySet()) {
+    for (Map.Entry<String, String> e : ymlMap.entrySet()) {
       {
-        e.setValue(e.getValue().toString());
+        e.setValue(e.getValue());
       }
     }
     return ParameterTool.fromMap(ymlMap);

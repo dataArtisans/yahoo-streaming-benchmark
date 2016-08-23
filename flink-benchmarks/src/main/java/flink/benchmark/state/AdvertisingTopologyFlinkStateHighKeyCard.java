@@ -4,11 +4,11 @@
  */
 package flink.benchmark.state;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import flink.benchmark.BenchmarkConfig;
 import flink.benchmark.generator.HighKeyCardinalityGeneratorSource;
 import flink.benchmark.utils.ThroughputLogger;
-import net.minidev.json.JSONObject;
-import net.minidev.json.parser.JSONParser;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichFlatMapFunction;
@@ -24,7 +24,7 @@ import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AscendingTimestampExtractor;
 import org.apache.flink.streaming.api.functions.source.RichParallelSourceFunction;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer08;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer09;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
 
@@ -55,20 +55,20 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
     DataStream<String> rawMessageStream = streamSource(config, env);
 
     // log performance
-    rawMessageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    rawMessageStream.flatMap(new ThroughputLogger<>(240, 1_000_000));
 
     DataStream<UUID> campaignHits = rawMessageStream
-      .flatMap(new Deserializer())
-      .filter(new EventFilter())
-      .assignTimestampsAndWatermarks(new AdTimestampExtractor()) // assign event time stamp and generate watermark
-      .map(new Projector());
+        .flatMap(new Deserializer())
+        .filter(new EventFilter())
+        .assignTimestampsAndWatermarks(new AdTimestampExtractor()) // assign event time stamp and generate watermark
+        .map(new Projector());
 
     // campaign_id, event time
     campaignHits
-      .keyBy(identity())
-      .transform("Query Window",
-        queryWindowResultType,
-        new QueryableWindowOperatorEvicting(config.windowSize, registrationService, true));
+        .keyBy(identity())
+        .transform("Query Window",
+            queryWindowResultType,
+            new QueryableWindowOperatorEvicting(config.windowSize, registrationService, true));
 
     env.execute();
   }
@@ -98,12 +98,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
    * The identity selector
    */
   private static KeySelector<UUID, UUID> identity() {
-    return new KeySelector<UUID, UUID>() {
-      @Override
-      public UUID getKey(UUID s) {
-        return s;
-      }
-    };
+    return (KeySelector<UUID, UUID>) s -> s;
   }
 
   /**
@@ -113,8 +108,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
     RichParallelSourceFunction<String> source;
     String sourceName;
     if (config.useLocalEventGenerator) {
-      HighKeyCardinalityGeneratorSource eventGenerator = new HighKeyCardinalityGeneratorSource(config);
-      source = eventGenerator;
+      source = new HighKeyCardinalityGeneratorSource(config);
       sourceName = "EventGenerator";
     } else {
       source = kafkaSource(config);
@@ -127,11 +121,11 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
   /**
    * Setup kafka source
    */
-  private static FlinkKafkaConsumer08<String> kafkaSource(BenchmarkConfig config) {
-    return new FlinkKafkaConsumer08<>(
-      config.kafkaTopic,
-      new SimpleStringSchema(),
-      config.getParameters().getProperties());
+  private static FlinkKafkaConsumer09<String> kafkaSource(BenchmarkConfig config) {
+    return new FlinkKafkaConsumer09<>(
+        config.kafkaTopic,
+        new SimpleStringSchema(),
+        config.getParameters().getProperties());
   }
 
   // --------------------------------------------------------------------------
@@ -141,30 +135,26 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
   /**
    * Parse JSON
    */
-  public static class Deserializer extends
-    RichFlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
-
-    private transient JSONParser parser = null;
+  private static class Deserializer extends
+      RichFlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
 
     @Override
     public void open(Configuration parameters) throws Exception {
-      parser = new JSONParser();
     }
 
     @Override
     public void flatMap(String input, Collector<Tuple7<String, String, String, String, String, String, String>> out)
-      throws Exception {
-      JSONObject obj = (JSONObject) parser.parse(input);
-
+        throws Exception {
+      JSONObject obj = JSON.parseObject(input);
       Tuple7<String, String, String, String, String, String, String> tuple =
-        new Tuple7<>(
-          obj.getAsString("user_id"),
-          obj.getAsString("page_id"),
-          obj.getAsString("campaign_id"),
-          obj.getAsString("ad_type"),
-          obj.getAsString("event_type"),
-          obj.getAsString("event_time"),
-          obj.getAsString("ip_address"));
+          new Tuple7<>(
+              obj.getString("user_id"),
+              obj.getString("page_id"),
+              obj.getString("campaign_id"),
+              obj.getString("ad_type"),
+              obj.getString("event_type"),
+              obj.getString("event_time"),
+              obj.getString("ip_address"));
       out.collect(tuple);
     }
   }
@@ -172,8 +162,8 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
   /**
    * Filter out everything except "view" events
    */
-  public static class EventFilter implements
-    FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
+  private static class EventFilter implements
+      FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
     @Override
     public boolean filter(Tuple7<String, String, String, String, String, String, String> tuple) {
       return tuple.f4.equals("view");
@@ -183,7 +173,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
   /**
    * Project to campaign id
    */
-  public static class Projector implements MapFunction<Tuple7<String, String, String, String, String, String, String>, UUID> {
+  private static class Projector implements MapFunction<Tuple7<String, String, String, String, String, String, String>, UUID> {
 
     @Override
     public UUID map(Tuple7<String, String, String, String, String, String, String> tuple) {
@@ -194,7 +184,7 @@ public class AdvertisingTopologyFlinkStateHighKeyCard {
   /**
    * Generate timestamp and watermarks
    */
-  public static class AdTimestampExtractor extends AscendingTimestampExtractor<Tuple7<String, String, String, String, String, String, String>> {
+  private static class AdTimestampExtractor extends AscendingTimestampExtractor<Tuple7<String, String, String, String, String, String, String>> {
     @Override
     public long extractAscendingTimestamp(Tuple7<String, String, String, String, String, String, String> element) {
       return Long.parseLong(element.f5);

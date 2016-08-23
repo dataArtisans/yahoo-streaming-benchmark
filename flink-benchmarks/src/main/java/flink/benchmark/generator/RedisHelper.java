@@ -18,7 +18,7 @@ public class RedisHelper {
 
   private final BenchmarkConfig config;
 
-  public RedisHelper(BenchmarkConfig config){
+  public RedisHelper(BenchmarkConfig config) {
     this.config = config;
   }
 

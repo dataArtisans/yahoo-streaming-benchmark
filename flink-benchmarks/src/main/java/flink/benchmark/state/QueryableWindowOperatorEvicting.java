@@ -45,6 +45,7 @@ import scala.Option;
 import scala.Some;
 import scala.concurrent.duration.FiniteDuration;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.net.UnknownHostException;
 import java.util.*;
@@ -234,8 +235,8 @@ public class QueryableWindowOperatorEvicting
 	}
 
 	@Override
-	public void restoreState(StreamTaskState taskState, long recoveryTimestamp) throws Exception {
-		super.restoreState(taskState, recoveryTimestamp);
+	public void restoreState(StreamTaskState taskState) throws Exception {
+		super.restoreState(taskState);
 
 		@SuppressWarnings("unchecked")
 		StateHandle<DataInputView> inputState = (StateHandle<DataInputView>) taskState.getOperatorState();
@@ -287,7 +288,7 @@ public class QueryableWindowOperatorEvicting
 		UUID keyUUID = null;
 		try {
 			keyUUID = UUID.fromString(key);
-		} catch (Exception e) {}
+		} catch (Exception ignored) {}
 
 		synchronized (windows) {
 			Map<UUID, CountAndAccessTime> window;
@@ -416,6 +417,15 @@ public class QueryableWindowOperatorEvicting
 		@Override
 		public long getStateSize() throws Exception {
 			return size;
+		}
+
+		@Override
+		public void close() throws IOException {
+			try {
+				backend.close();
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
 		}
 	}
 }

@@ -29,14 +29,14 @@ import java.io.IOException;
 import java.io.Serializable;
 import java.net.InetSocketAddress;
 
-public class ZooKeeperRegistrationService implements RegistrationService, Serializable {
+class ZooKeeperRegistrationService implements RegistrationService, Serializable {
 
 	private static final Logger LOG = LoggerFactory.getLogger(ZooKeeperRegistrationService.class);
 
 	private final ZooKeeperConfiguration configuration;
 	private transient CuratorFramework client;
 
-	public ZooKeeperRegistrationService(ZooKeeperConfiguration configuration) {
+	ZooKeeperRegistrationService(ZooKeeperConfiguration configuration) {
 		this.configuration = configuration;
 	}
 
@@ -85,9 +85,7 @@ public class ZooKeeperRegistrationService implements RegistrationService, Serial
 
 						success = true;
 					}
-				} catch (KeeperException.NoNodeException ex) {
-					// ignore and try again
-				} catch (KeeperException.NodeExistsException ex) {
+				} catch (KeeperException.NoNodeException | KeeperException.NodeExistsException ex) {
 					// ignore and try again
 				}
 			}

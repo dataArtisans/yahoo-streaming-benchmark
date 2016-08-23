@@ -27,89 +27,89 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class ZooKeeperRetrievalService<K> implements RetrievalService<K> {
+class ZooKeeperRetrievalService<K> implements RetrievalService<K> {
 
-	private final static Logger LOG = LoggerFactory.getLogger(ZooKeeperRetrievalService.class);
+  private final static Logger LOG = LoggerFactory.getLogger(ZooKeeperRetrievalService.class);
 
-	private final Object lock = new Object();
-	private final ZooKeeperConfiguration configuration;
-	private CuratorFramework client;
-	private Map<Integer, String> actorMap;
+  private final Object lock = new Object();
+  private final ZooKeeperConfiguration configuration;
+  private CuratorFramework client;
+  private Map<Integer, String> actorMap;
 
-	public ZooKeeperRetrievalService(ZooKeeperConfiguration configuration) {
-		this.configuration = configuration;
-	}
+  ZooKeeperRetrievalService(ZooKeeperConfiguration configuration) {
+    this.configuration = configuration;
+  }
 
-	@Override
-	public void start() throws Exception {
-		client = ZooKeeperUtils.startCuratorFramework(
-			configuration.getRootPath(),
-			configuration.getZkQuorum(),
-			configuration.getSessionTimeout(),
-			configuration.getConnectionTimeout(),
-			configuration.getRetryWait(),
-			configuration.getMaxRetryAttempts());
+  @Override
+  public void start() throws Exception {
+    client = ZooKeeperUtils.startCuratorFramework(
+        configuration.getRootPath(),
+        configuration.getZkQuorum(),
+        configuration.getSessionTimeout(),
+        configuration.getConnectionTimeout(),
+        configuration.getRetryWait(),
+        configuration.getMaxRetryAttempts());
 
-		refreshActorCache();
-	}
+    refreshActorCache();
+  }
 
-	@Override
-	public void stop() {
-		if (client != null) {
-			client.close();
-			client = null;
-		}
-	}
+  @Override
+  public void stop() {
+    if (client != null) {
+      client.close();
+      client = null;
+    }
+  }
 
-	@Override
-	public String retrieveActorURL(K key) {
-		LOG.debug("Retrieve actor URL for key " + key + ".");
-		synchronized (lock) {
-			if (actorMap != null) {
-				int partition = getPartitionID(key);
-				return actorMap.get(partition);
-			} else {
-				return null;
-			}
-		}
-	}
+  @Override
+  public String retrieveActorURL(K key) {
+    LOG.debug("Retrieve actor URL for key " + key + ".");
+    synchronized (lock) {
+      if (actorMap != null) {
+        int partition = getPartitionID(key);
+        return actorMap.get(partition);
+      } else {
+        return null;
+      }
+    }
+  }
 
-	@Override
-	public void refreshActorCache() throws Exception {
-		if (client != null) {
-			LOG.debug("Refresh actor cache.");
-			List<String> children = client.getChildren().forPath("/");
+  @Override
+  public void refreshActorCache() throws Exception {
+    if (client != null) {
+      LOG.debug("Refresh actor cache.");
+      List<String> children = client.getChildren().forPath("/");
 
-			Map<Integer, String> newActorMap = new HashMap<>();
+      Map<Integer, String> newActorMap = new HashMap<>();
 
-			for (String child : children) {
-				try {
-					byte[] data = client.getData().forPath("/" + child);
+      for (String child : children) {
+        try {
+          byte[] data = client.getData().forPath("/" + child);
 
-					newActorMap.put(Integer.parseInt(child), new String(data));
-				} catch (KeeperException.NoNodeException ex) {
-					//ignore
-				}
-			}
+          newActorMap.put(Integer.parseInt(child), new String(data));
+        } catch (KeeperException.NoNodeException ex) {
+          //ignore
+        }
+      }
 
-			synchronized (lock) {
-				if (newActorMap.size() > 0) {
-					actorMap = newActorMap;
-				} else {
-					actorMap = null;
-				}
-			}
-			LOG.debug("Finished refreshing actor cache.");
-		} else {
-			throw new RuntimeException("The CuratorFramework client has not been properly initialized.");
-		}
-	}
+      synchronized (lock) {
+        if (newActorMap.size() > 0) {
+          actorMap = newActorMap;
+        } else {
+          actorMap = null;
+        }
+      }
+      LOG.debug("Finished refreshing actor cache.");
+    } else {
+      throw new RuntimeException("The CuratorFramework client has not been properly initialized.");
+    }
+  }
 
-	@Override
-	public int getPartitionID(K key) {
-		if(actorMap == null) {
-			throw new RuntimeException("Actor map is null");
-		}
-		return Math.abs(key.hashCode() % actorMap.size());
-	}
+  @Override
+  public int getPartitionID(K key) {
+    if (actorMap == null) {
+      throw new RuntimeException("Actor map is null");
+    }
+    return Math.abs(key.hashCode() % actorMap.size());
+  }
 }

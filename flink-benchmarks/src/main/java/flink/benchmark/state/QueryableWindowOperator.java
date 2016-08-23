@@ -41,6 +41,7 @@ import scala.Option;
 import scala.Some;
 import scala.concurrent.duration.FiniteDuration;
 
+import java.io.IOException;
 import java.io.Serializable;
 import java.net.UnknownHostException;
 import java.util.HashMap;
@@ -52,10 +53,10 @@ import java.util.concurrent.TimeUnit;
  * Custom operator that computes windows and also makes that state directly queryable from
  * outside the streaming system via Akka.
  */
-public class QueryableWindowOperator
-  extends AbstractStreamOperator<Tuple3<String, Long, Long>>
-  implements OneInputStreamOperator<Tuple2<String, Long>, Tuple3<String, Long, Long>>,
-  QueryableKeyValueState<String, String> /* key: campaign_id (String), value: long (window count) */ {
+class QueryableWindowOperator
+    extends AbstractStreamOperator<Tuple3<String, Long, Long>>
+    implements OneInputStreamOperator<Tuple2<String, Long>, Tuple3<String, Long, Long>>,
+    QueryableKeyValueState<String, String> /* key: campaign_id (String), value: long (window count) */ {
 
   private static final Logger LOG = LoggerFactory.getLogger(QueryableWindowOperator.class);
 
@@ -83,9 +84,9 @@ public class QueryableWindowOperator
   private static int actorSystemUsers = 0;
   private static final Object actorSystemLock = new Object();
 
-  public QueryableWindowOperator(
-    long windowSize,
-    RegistrationService registrationService) {
+  QueryableWindowOperator(
+      long windowSize,
+      RegistrationService registrationService) {
     this.windowSize = windowSize;
     this.registrationService = registrationService;
   }
@@ -193,10 +194,10 @@ public class QueryableWindowOperator
       }
 
       AsynchronousStateHandle<DataInputView> asyncState = new DataInputViewAsynchronousStateHandle(
-        checkpointId,
-        timestamp,
-        stateSnapshot,
-        getStateBackend());
+          checkpointId,
+          timestamp,
+          stateSnapshot,
+          getStateBackend());
 
       taskState.setOperatorState(asyncState);
       return taskState;
@@ -209,8 +210,8 @@ public class QueryableWindowOperator
   }
 
   @Override
-  public void restoreState(StreamTaskState taskState, long recoveryTimestamp) throws Exception {
-    super.restoreState(taskState, recoveryTimestamp);
+  public void restoreState(StreamTaskState taskState) throws Exception {
+    super.restoreState(taskState);
 
     @SuppressWarnings("unchecked")
     StateHandle<DataInputView> inputState = (StateHandle<DataInputView>) taskState.getOperatorState();
@@ -249,7 +250,7 @@ public class QueryableWindowOperator
     LOG.info("Query for timestamp {} and key {}", timestamp, key);
     if (Math.abs(key.hashCode() % getRuntimeContext().getNumberOfParallelSubtasks()) != getRuntimeContext().getIndexOfThisSubtask()) {
       throw new WrongKeyPartitionException("Key " + key + " is not part of the partition " +
-        "of subtask " + getRuntimeContext().getIndexOfThisSubtask());
+          "of subtask " + getRuntimeContext().getIndexOfThisSubtask());
     }
 
     if (windows == null) {
@@ -337,10 +338,10 @@ public class QueryableWindowOperator
     private AbstractStateBackend backend;
     private long size = 0;
 
-    public DataInputViewAsynchronousStateHandle(long checkpointId,
-                                                long timestamp,
-                                                Map<String, Map<Long, CountAndAccessTime>> stateSnapshot,
-                                                AbstractStateBackend backend) {
+    DataInputViewAsynchronousStateHandle(long checkpointId,
+                                         long timestamp,
+                                         Map<String, Map<Long, CountAndAccessTime>> stateSnapshot,
+                                         AbstractStateBackend backend) {
       this.checkpointId = checkpointId;
       this.timestamp = timestamp;
       this.stateSnapshot = stateSnapshot;
@@ -350,8 +351,8 @@ public class QueryableWindowOperator
     @Override
     public StateHandle<DataInputView> materialize() throws Exception {
       AbstractStateBackend.CheckpointStateOutputView out = backend.createCheckpointStateOutputView(
-        checkpointId,
-        timestamp);
+          checkpointId,
+          timestamp);
 
       int numWindows = stateSnapshot.size();
       out.writeInt(numWindows);
@@ -377,6 +378,15 @@ public class QueryableWindowOperator
     @Override
     public long getStateSize() throws Exception {
       return size;
+    }
+
+    @Override
+    public void close() throws IOException {
+      try {
+        backend.close();
+      } catch (Exception e) {
+        e.printStackTrace();
+      }
     }
   }
 }

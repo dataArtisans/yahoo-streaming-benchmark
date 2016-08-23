@@ -30,53 +30,53 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class AkkaUtils {
-	private static final Logger LOG = LoggerFactory.getLogger(AkkaUtils.class);
+class AkkaUtils {
+  private static final Logger LOG = LoggerFactory.getLogger(AkkaUtils.class);
 
-	public static Config getDefaultAkkaConfig(String hostname, int port) throws UnknownHostException{
-		InetAddress address = InetAddress.getByName(hostname);
+  static Config getDefaultAkkaConfig(String hostname, int port) throws UnknownHostException {
+    InetAddress address = InetAddress.getByName(hostname);
 
-		String resolvedHostname = address.getHostName();
+    String resolvedHostname = address.getHostName();
 
-		Map<String, Object> configMap = new HashMap<String, Object>();
-		List<String> loggers = new ArrayList<String>();
+    Map<String, Object> configMap = new HashMap<>();
+    List<String> loggers = new ArrayList<>();
 
-		loggers.add("akka.event.slf4j.Slf4jLogger");
+    loggers.add("akka.event.slf4j.Slf4jLogger");
 
-		configMap.put("akka.daemonic", "on");
-		configMap.put("akka.loggers", loggers);
-		configMap.put("akka.logging-filter", "akka.event.slf4j.Slf4jLoggingFilter");
-		configMap.put("akka.log-config-on-start", "off");
-		configMap.put("akka.serialize-messages", "off");
-		configMap.put("akka.loglevel", getlogLevel());
-		configMap.put("akka.stdout-loglevel", "OFF");
-		configMap.put("akka.actor.provider", "akka.remote.RemoteActorRefProvider");
-		configMap.put("akka.remote.netty.tcp.transport-class", "akka.remote.transport.netty.NettyTransport");
-		configMap.put("akka.remote.netty.tcp.port", port + "");
-		configMap.put("akka.remote.netty.tcp.tcp-nodelay", "on");
-		configMap.put("akka.remote.transport-failure-detector.heartbeat-interval", "1000s");
-		configMap.put("akka.remote.transport-failure-detector.acceptable-heartbeat-pause", "6000s");
+    configMap.put("akka.daemonic", "on");
+    configMap.put("akka.loggers", loggers);
+    configMap.put("akka.logging-filter", "akka.event.slf4j.Slf4jLoggingFilter");
+    configMap.put("akka.log-config-on-start", "off");
+    configMap.put("akka.serialize-messages", "off");
+    configMap.put("akka.loglevel", getlogLevel());
+    configMap.put("akka.stdout-loglevel", "OFF");
+    configMap.put("akka.actor.provider", "akka.remote.RemoteActorRefProvider");
+    configMap.put("akka.remote.netty.tcp.transport-class", "akka.remote.transport.netty.NettyTransport");
+    configMap.put("akka.remote.netty.tcp.port", port + "");
+    configMap.put("akka.remote.netty.tcp.tcp-nodelay", "on");
+    configMap.put("akka.remote.transport-failure-detector.heartbeat-interval", "1000s");
+    configMap.put("akka.remote.transport-failure-detector.acceptable-heartbeat-pause", "6000s");
 
-		if (resolvedHostname != null && resolvedHostname.length() > 0) {
-			configMap.put("akka.remote.netty.tcp.hostname", resolvedHostname);
-		}
+    if (resolvedHostname != null && resolvedHostname.length() > 0) {
+      configMap.put("akka.remote.netty.tcp.hostname", resolvedHostname);
+    }
 
-		return ConfigFactory.parseMap(configMap);
-	}
+    return ConfigFactory.parseMap(configMap);
+  }
 
-	public static String getlogLevel() {
-		if (LOG.isTraceEnabled()) {
-			return "TRACE";
-		} else if (LOG.isDebugEnabled()) {
-			return "DEBUG";
-		} else if (LOG.isInfoEnabled()) {
-			return "INFO";
-		} else if (LOG.isWarnEnabled()) {
-			return "WARNING";
-		} else if (LOG.isErrorEnabled()) {
-			return "ERROR";
-		} else {
-			return "OFF";
-		}
-	}
+  private static String getlogLevel() {
+    if (LOG.isTraceEnabled()) {
+      return "TRACE";
+    } else if (LOG.isDebugEnabled()) {
+      return "DEBUG";
+    } else if (LOG.isInfoEnabled()) {
+      return "INFO";
+    } else if (LOG.isWarnEnabled()) {
+      return "WARNING";
+    } else if (LOG.isErrorEnabled()) {
+      return "ERROR";
+    } else {
+      return "OFF";
+    }
+  }
 }

@@ -18,14 +18,14 @@
 
 package flink.benchmark.state;
 
-public interface RetrievalService<K> {
-	void start() throws Exception;
+interface RetrievalService<K> {
+  void start() throws Exception;
 
-	void stop();
+  void stop();
 
-	String retrieveActorURL(K key);
+  String retrieveActorURL(K key);
 
-	void refreshActorCache() throws Exception;
+  void refreshActorCache() throws Exception;
 
-	int getPartitionID(K key);
+  int getPartitionID(K key);
 }

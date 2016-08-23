@@ -5,3 +5,5 @@ download-cache/**
 download-cache
 .idea/
 *.iml
+conf/my_benchmark.yaml
+conf/localConf.yaml

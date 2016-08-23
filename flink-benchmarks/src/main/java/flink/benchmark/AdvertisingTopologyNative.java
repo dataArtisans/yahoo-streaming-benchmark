@@ -4,27 +4,30 @@
  */
 package flink.benchmark;
 
-import benchmark.common.advertising.RedisAdCampaignCache;
 import benchmark.common.advertising.CampaignProcessorCommon;
+import benchmark.common.advertising.RedisAdCampaignCache;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import flink.benchmark.utils.ThroughputLogger;
-import org.apache.flink.api.common.functions.*;
+import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.FlatMapFunction;
+import org.apache.flink.api.common.functions.RichFlatMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.tuple.Tuple7;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.streaming.api.datastream.DataStream;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer082;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer09;
 import org.apache.flink.streaming.util.serialization.SimpleStringSchema;
 import org.apache.flink.util.Collector;
-import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 
 /**
  * To Run:  flink run -c flink.benchmark.AdvertisingTopologyNative target/flink-benchmarks-0.1.0.jar "../conf/benchmarkConf.yaml
- *
+ * <p>
  * Computes the windows using custom operator rather than Flink built-in primitives.  This is the approach
  * used in the original Yahoo! benchmark.
  */
@@ -46,25 +49,25 @@ public class AdvertisingTopologyNative {
 
     DataStream<String> messageStream = env.addSource(kafkaSource(config));
 
-    messageStream.flatMap(new ThroughputLogger<String>(240, 1_000_000));
+    messageStream.flatMap(new ThroughputLogger<>(240, 1_000_000));
 
     messageStream
-      .rebalance()
-      // Parse the String as JSON
-      .flatMap(new DeserializeBolt())
+        .rebalance()
+        // Parse the String as JSON
+        .flatMap(new DeserializeBolt())
 
-      //Filter the records if event type is "view"
-      .filter(new EventFilterBolt())
+        //Filter the records if event type is "view"
+        .filter(new EventFilterBolt())
 
-      // project the event
-      .<Tuple2<String, String>>project(2, 5)
+        // project the event
+        .<Tuple2<String, String>>project(2, 5)
 
-      // perform join with redis data
-      .flatMap(new RedisJoinBolt(config))
+        // perform join with redis data
+        .flatMap(new RedisJoinBolt(config))
 
-      // process campaign
-      .keyBy(0)
-      .flatMap(new CampaignProcessor(config));
+        // process campaign
+        .keyBy(0)
+        .flatMap(new CampaignProcessor(config));
 
     env.execute();
   }
@@ -72,32 +75,33 @@ public class AdvertisingTopologyNative {
   /**
    * Create Kafka Source
    */
-  private static FlinkKafkaConsumer082<String> kafkaSource(BenchmarkConfig config) {
-    return new FlinkKafkaConsumer082<>(
-      config.kafkaTopic,
-      new SimpleStringSchema(),
-      config.getParameters().getProperties());
+  private static FlinkKafkaConsumer09<String> kafkaSource(BenchmarkConfig config) {
+    return new FlinkKafkaConsumer09<>(
+        config.kafkaTopic,
+        new SimpleStringSchema(),
+        config.getParameters().getProperties());
   }
 
   /**
    * Parse JSON
    */
-  public static class DeserializeBolt implements
-    FlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
+  private static class DeserializeBolt implements
+      FlatMapFunction<String, Tuple7<String, String, String, String, String, String, String>> {
 
     @Override
     public void flatMap(String input, Collector<Tuple7<String, String, String, String, String, String, String>> out)
-      throws Exception {
-      JSONObject obj = new JSONObject(input);
+        throws Exception {
+      JSONObject obj = JSON.parseObject(input);
+
       Tuple7<String, String, String, String, String, String, String> tuple =
-        new Tuple7<>(
-          obj.getString("user_id"),
-          obj.getString("page_id"),
-          obj.getString("ad_id"),
-          obj.getString("ad_type"),
-          obj.getString("event_type"),
-          obj.getString("event_time"),
-          obj.getString("ip_address"));
+          new Tuple7<>(
+              obj.getString("user_id"),
+              obj.getString("page_id"),
+              obj.getString("ad_id"),
+              obj.getString("ad_type"),
+              obj.getString("event_type"),
+              obj.getString("event_time"),
+              obj.getString("ip_address"));
       out.collect(tuple);
     }
   }
@@ -105,8 +109,8 @@ public class AdvertisingTopologyNative {
   /**
    * Filter down to only "view" events
    */
-  public static class EventFilterBolt implements
-    FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
+  private static class EventFilterBolt implements
+      FilterFunction<Tuple7<String, String, String, String, String, String, String>> {
     @Override
     public boolean filter(Tuple7<String, String, String, String, String, String, String> tuple) throws Exception {
       return tuple.getField(4).equals("view");
@@ -116,12 +120,12 @@ public class AdvertisingTopologyNative {
   /**
    * Map from ad id to campaign using cached Redis data
    */
-  public static final class RedisJoinBolt extends RichFlatMapFunction<Tuple2<String, String>, Tuple3<String, String, String>> {
+  private static final class RedisJoinBolt extends RichFlatMapFunction<Tuple2<String, String>, Tuple3<String, String, String>> {
 
     private final BenchmarkConfig config;
     RedisAdCampaignCache redisAdCampaignCache;
 
-    RedisJoinBolt(BenchmarkConfig config){
+    RedisJoinBolt(BenchmarkConfig config) {
       this.config = config;
     }
 
@@ -142,9 +146,9 @@ public class AdvertisingTopologyNative {
       }
 
       Tuple3<String, String, String> tuple = new Tuple3<>(
-        campaign_id,
-        (String) input.getField(0),
-        (String) input.getField(1));
+          campaign_id,
+          input.getField(0),
+          input.getField(1));
       out.collect(tuple);
     }
   }
@@ -152,13 +156,13 @@ public class AdvertisingTopologyNative {
   /**
    * Write windows to Redis
    */
-  public static class CampaignProcessor extends RichFlatMapFunction<Tuple3<String, String, String>, String> {
+  private static class CampaignProcessor extends RichFlatMapFunction<Tuple3<String, String, String>, String> {
 
     CampaignProcessorCommon campaignProcessorCommon;
 
     BenchmarkConfig config;
 
-    CampaignProcessor(BenchmarkConfig config){
+    CampaignProcessor(BenchmarkConfig config) {
       this.config = config;
     }
 
