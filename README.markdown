@@ -7,7 +7,7 @@ This code is a fork of the original [Yahoo! Streaming benchmark code](https://gi
 
 We have added to this the following additional benchmarking programs. They are all variations of the original Yahoo! benchmarks.
 
-For additional background please read ["Extending the Yahoo! Streaming Benchmark"](http://data-artisans.com/extending-the-yahoo-streaming-benchmark/) and ["Benchmarking Streaming Computation Engines at Yahoo!"](http://yahooeng.tumblr.com/post/135321837876/benchmarking-streaming-computation-engines-at)
+For additional background please read ["Extending the Yahoo! Streaming Benchmark"](https://www.ververica.com/blog/extending-the-yahoo-streaming-benchmark) and ["Benchmarking Streaming Computation Engines at Yahoo!"](http://yahooeng.tumblr.com/post/135321837876/benchmarking-streaming-computation-engines-at)
 
 
 #### flink.benchmark.AdvertisingTopologyFlinkWindows
